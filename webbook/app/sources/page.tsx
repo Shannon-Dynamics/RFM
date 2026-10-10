@@ -9,6 +9,7 @@ import styles from "@/components/chapter/chapter.module.css";
 export const metadata: Metadata = {
   title: "Sources",
   description: "Every paper, report and page the book cites, with the chapters that cite it.",
+  alternates: { canonical: "/sources/" },
 };
 
 function authorList(a: string[]): string {
