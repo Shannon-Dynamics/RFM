@@ -10,6 +10,7 @@ import own from "./read.module.css";
 export const metadata: Metadata = {
   title: "How to Read This Book",
   description: "The organising idea, the reading paths, how evidence is marked, and the Rust lab.",
+  alternates: { canonical: "/chapters/" },
 };
 
 const PATHS = [

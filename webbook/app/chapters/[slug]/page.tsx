@@ -15,7 +15,9 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const ch = chapterBySlug((await params).slug);
-  return ch ? { title: `${ch.n}. ${ch.title}`, description: ch.purpose } : {};
+  return ch
+    ? { title: `${ch.n}. ${ch.title}`, description: ch.purpose, alternates: { canonical: `/chapters/${ch.slug}/` } }
+    : {};
 }
 
 export default async function ChapterPage({ params }: { params: Promise<{ slug: string }> }) {

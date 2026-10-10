@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { CHAPTERS, PARTS } from "@/content/book";
 import { FamilyGrid } from "@/components/viz/FamilyGrid";
@@ -5,6 +6,10 @@ import { HeroLookAhead } from "@/components/viz/HeroLookAhead";
 import { Halftone } from "@/components/shell/Halftone";
 import { SiteFooter } from "@/components/shell/SiteFooter";
 import styles from "./home.module.css";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const ROMAN = ["I", "II", "III", "IV"];
 
