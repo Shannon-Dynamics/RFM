@@ -1,0 +1,15 @@
+.wrap { display: grid; gap: 0.8rem; font-family: var(--font-ui); overflow-x: auto; }
+.table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: 0.86rem; }
+.table th, .table td { border-bottom: 1px solid var(--rule); padding: 0.4rem 0.35rem; text-align: center; }
+.table thead th { font-weight: 600; color: var(--ink-2); font-size: 0.76rem; line-height: 1.2; vertical-align: bottom; }
+.table tbody th { text-align: left; font-weight: 400; white-space: nowrap; padding-left: 0; }
+.model { display: block; font-weight: 600; color: var(--ink); }
+.meta { display: block; font-size: 0.74rem; color: var(--ink-3); }
+.mark { display: inline-block; width: 0.95rem; height: 0.95rem; border-radius: 50%; vertical-align: middle; }
+.mark[data-use="in"] { border: 2.5px solid var(--fam-geometry); }
+.mark[data-use="out"] { background: var(--fam-geometry); }
+.mark[data-use="both"] { background: var(--fam-geometry); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--fam-geometry); }
+.mark[data-use="train"] { border: 2px dashed var(--ink-2); }
+.none { display: inline-block; width: 0.5rem; height: 2px; background: var(--rule-strong); vertical-align: middle; }
+.key { list-style: none; display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; margin: 0; padding: 0; color: var(--ink-2); font-size: 0.84rem; }
+.key li { display: inline-flex; align-items: center; gap: 0.45rem; }

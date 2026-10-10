@@ -1,0 +1,28 @@
+.grid {
+  display: grid;
+  grid-template-columns: 10.5rem 1fr 1fr;
+  border-top: 1px solid var(--rule-strong);
+}
+.rowWrap { display: contents; }
+.colHead, .rowHead { display: grid; align-content: start; gap: 0.1rem; padding: 0.7rem 0.8rem; font-size: 0.95rem; color: var(--ink-2); line-height: 1.3; }
+.colHead strong, .rowHead strong { color: var(--ink); font-size: 1.05rem; }
+.colHead { border-bottom: 1px solid var(--rule-strong); }
+.rowHead { border-bottom: 1px solid var(--rule); border-right: 1px solid var(--rule-strong); padding-left: 0; }
+.cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.45rem;
+  padding: 0.8rem;
+  border-bottom: 1px solid var(--rule);
+  min-height: 6.5rem;
+}
+.cell + .cell { border-left: 1px solid var(--rule); }
+@media (max-width: 640px) {
+  .grid { grid-template-columns: 1fr; }
+  .grid > div:first-child { display: none; }
+  .colHead { display: none; }
+  .rowHead { border-right: 0; padding-left: 0; }
+  .cell + .cell { border-left: 0; }
+  .cell::before { content: attr(data-col); display: block; width: 100%; font-size: 0.85rem; color: var(--ink-3); }
+}

@@ -1,0 +1,209 @@
+import { PixelVsLatent } from "@/components/viz/PixelVsLatent";
+import { LatentActions } from "@/components/viz/LatentActions";
+import { HumanToRobot } from "@/components/viz/HumanToRobot";
+import { WholeBodyTokens } from "@/components/viz/WholeBodyTokens";
+import { LatentFourComponents } from "@/content/ch07/figures";
+
+{/* Chapter 7. Brief: Book.md section 4, chapter 7. Last checked 3 October 2026. L2: equations with a walkthrough of each term. */}
+
+<Figure
+  id="7.1"
+  takeaway="A pixel loss spends most of its signal on things no model can predict; a loss on features hears mainly what the action changed."
+  caption="A robot pushes a block along a strip of 48 pixels while the background flickers unpredictably. The same wrong prediction is scored in pixels (top) and in features (bottom). Raise the flicker and watch where the pixel loss comes from."
+  source="this book's toy, in rust/ch07-latent; the argument follows VLA-JEPA (arXiv 2602.10098), JEPA-VLA (2602.11832) and DINO-WM (2411.04983)."
+  toy
+>
+  <PixelVsLatent />
+</Figure>
+
+## Why this chapter exists
+
+Chapter 6 showed what a robot gains by predicting the future, and what it pays: generating video is expensive, and most of what a video model predicts is irrelevant to the robot. The exact texture of a tablecloth, the flicker of a screen, a shadow moving across the counter all cost model capacity and compute, and none of them change what the gripper should do.
+
+This chapter covers two related ideas that answer that cost. The first is to predict in representation space: forecast the features of the next frame, not its pixels, so the model is free to ignore whatever it cannot or need not predict. The second is to infer actions that were never recorded. A model watching two consecutive frames of a person stirring a pot can compress "what happened" into a small latent action, and that turns the largest layer of chapter 2's data pyramid, video with no actions at all, into something a policy can learn from.
+
+After this chapter you will be able to:
+
+- write down the difference between a pixel loss and a latent loss, explain what each term does, and use figure 7.1 to say why the latent one learns faster from noisy footage;
+- explain with figure 7.2 how a latent action model reads an action off two frames, and why a human hand and a robot gripper can share one;
+- judge where a latent model's claims are strong (cheap inference, learning from human video) and where they are still weak (per-robot decoding, collapse, real-robot comparisons).
+
+<Quote
+  who="Gaoyue Zhou, Hengkai Pan, Yann LeCun and Lerrel Pinto"
+  role="authors of DINO-WM"
+  source="DINO-WM: World Models on Pre-trained Visual Features enable Zero-shot Planning (arXiv 2411.04983)"
+  href="https://arxiv.org/abs/2411.04983"
+  date="7 November 2024"
+>
+  To this end, we present DINO World Model (DINO-WM), a new method to model visual dynamics without reconstructing the visual world.
+</Quote>
+
+## Predicting in the right space
+
+### Two losses
+
+In chapter 4's notation, a model that predicts the next observation in pixels is trained to make its prediction $\hat o_{t+1}$ match the real frame:
+
+$$
+\mathcal{L}_{\text{pixel}} = \big\lVert \hat o_{t+1} - o_{t+1} \big\rVert^2
+$$
+
+Every pixel counts equally. If the background flickers in a way no model could foresee, that flicker shows up in the loss on every training step, and it is the same size whether the model got the action right or wrong.
+
+A joint-embedding predictive architecture, or JEPA, moves the comparison into feature space <Cite k="v-jepa-2,lejepa" />:
+
+$$
+\mathcal{L}_{\text{latent}} = \big\lVert\, g_\phi\big(f_\theta(o_t),\ a_t\big) - \bar f\,(o_{t+1}) \,\big\rVert^2
+$$
+
+Read it term by term. $f_\theta$ is an encoder that turns the current frame into a feature vector. $g_\phi$ is a predictor that takes those features and the action $a_t$ and guesses the next frame's features. $\bar f$ is a target encoder: it turns the real next frame into the features the guess is compared with. In most JEPAs it is a slowly updated copy of $f_\theta$ that receives no gradient. The loss never touches a pixel. Because the encoder is learned too, it is free to drop anything that cannot be predicted, which is the property JEPA-VLA's authors single out: predictive video embeddings are "adept at flexibly discarding unpredictable environment factors" <Cite k="jepa-vla" />.
+
+Figure 7.1 makes the difference concrete with an idealised encoder that keeps only where the block is. With no flicker, the whole pixel loss is about the action. At a flicker of 0.3, only about 61 percent of it is, and at 0.5 only about 36 percent: the rest is noise that pushes the model around on every step without teaching it anything. The feature loss stays entirely about the action. Exercise 7.2 reproduces the numbers.
+
+### The catch: collapse
+
+The latent loss has an obvious cheat. If the encoder outputs the same vector for every frame, the predictor can match it perfectly and the loss is zero. This is representation collapse, and every JEPA needs a guard against it. The classic guards are the slowly updated target encoder and a stop-gradient. LeJEPA replaces these heuristics with a single regulariser, SIGReg, that pushes the embeddings towards an isotropic Gaussian distribution, which its authors prove is the best target for downstream prediction <Cite k="lejepa" />. Exercise 7.1 builds a detector for the same failure in a latent action codebook.
+
+### What the family has shown
+
+The lineage runs from general video features to robot control. DINO-WM predicts future DINOv2 patch features from offline trajectories and plans by optimising actions towards a goal image's features, solving tasks zero-shot in six environments <Cite k="dino-wm" />. V-JEPA 2 was pretrained on over one million hours of internet video. Its action-conditioned variant, V-JEPA 2-AC, was post-trained on less than 62 hours of unlabelled robot video from DROID, then deployed zero-shot on Franka arms in two labs, picking and placing objects by planning towards image goals <Cite k="v-jepa-2" />. SkyJEPA took the idea to quadrotors, combining a JEPA dynamics model with sampling-based control on embedded hardware <Cite k="skyjepa" />.
+
+In 2026 the idea reached VLAs and world-action models. VLA-JEPA pretrains with "leakage-free state prediction": future frames only produce targets, never inputs, so the model cannot learn to copy the answer <Cite k="vla-jepa" />. JEPA-VLA adds V-JEPA 2 embeddings to existing VLAs and reports gains on LIBERO, LIBERO-Plus, RoboTwin 2.0 and real robots <Cite k="jepa-vla" />. LaWAM predicts latent visual subgoals instead of future video. Its authors report 98.6 percent success on LIBERO, 187 ms per action chunk, and up to 24 times lower latency than pixel-space world-action models <Cite k="lawam" />. Two different August 2026 papers are both called JEPA-WAM. One couples latent transition prediction with action generation in a pretrained V-JEPA space; it reports 79.2 percent on LIBERO-Plus without large-scale robot pretraining and 86.3 percent when built on π0.5 <Cite k="jepa-wam-2608" />. The other encodes generated goal images with a frozen V-JEPA 2.1 encoder to improve instruction following <Cite k="jepa-wam-2609" />. Cite them by arXiv number.
+
+## Inferring actions that were never recorded
+
+### A latent action
+
+Video of people doing things is abundant; robot actions are not. A latent action model bridges the two by learning, from video alone, a small code for "what changed between these two frames". It has two parts trained together: an inverse model $E$ that looks at both frames and outputs a code, and a forward model $D$ that must reconstruct the second frame from the first plus that code:
+
+$$
+z_t = q\big(E(o_t,\ o_{t+1})\big), \qquad \mathcal{L}_{\text{LAM}} = \big\lVert D(o_t,\ z_t) - o_{t+1} \big\rVert^2
+$$
+
+The trick is the bottleneck $q$. In LAPA it is a VQ-VAE codebook: the code is snapped to the nearest of a small set of learned vectors <Cite k="lapa" />. Because $z_t$ is tiny and the forward model already sees $o_t$, the cheapest thing for $z_t$ to carry is the change itself, the motion, not the appearance. Genie used this to make an 11-billion-parameter model of interactive environments from unlabelled internet video <Cite k="genie" />; robotics borrowed it to make video look like demonstration data.
+
+<Figure
+  id="7.2"
+  takeaway="A latent action is the model's own word for 'what changed'; if two bodies do the same thing, they get the same words."
+  caption="A hand and a gripper each slide a cup right, lift it, pause and bring it back. The latent action model reads one code off each pair of frames; the forward model uses the code to predict the next frame. Switch videos and compare the two rows of codes."
+  source="this book's toy, after the VQ-VAE latent actions of LAPA (arXiv 2410.11758) and Genie (2402.15391); codebook and quantizer in rust/ch07-latent."
+  toy
+>
+  <LatentActions />
+</Figure>
+
+The toy idealises the hard part: here the latent action model is told where the hand is. A real one must find the hand, ignore the camera shake and not smuggle appearance into the code. VLA-JEPA's authors argue that many latent-action objectives fail exactly here, staying "anchored to pixel variation rather than action-relevant state transitions" and vulnerable to "appearance bias, nuisance motion, and information leakage" <Cite k="vla-jepa" />. ViPRA adds perceptual losses and optical-flow consistency to keep its latent actions physically grounded <Cite k="vipra" />. DreamDojo uses continuous rather than discrete latent actions as unified proxy actions across 44,000 hours of egocentric human video <Cite k="dreamdojo" />.
+
+### From human video to one robot
+
+<Figure
+  id="7.3"
+  takeaway="Latent actions move the expensive, robot-specific step to the end of the pipeline, where it needs hundreds of demonstrations instead of millions."
+  caption="Three stages, each consuming a different layer of the data pyramid. Select a stage for what it does and which models do it. Below, a toy of the last stage: how many labelled pairs a small decoder needs, at three levels of label noise."
+  source="stages after LAPA (arXiv 2410.11758) and ViPRA (2511.07732); decoder fit in rust/ch07-latent."
+  toy
+>
+  <HumanToRobot />
+</Figure>
+
+A latent action says "the hand moved right" in the camera's view. A robot needs "joint 3 by 0.1 radians". The last stage learns that mapping from a small set of real robot demonstrations, labelled with both:
+
+$$
+\hat a_t = h_\psi(z_t), \qquad \psi \text{ fitted on a few hundred } (z_t,\ a_t) \text{ pairs}
+$$
+
+That is a far smaller problem than learning control from scratch, and the published numbers reflect it. ViPRA's decoder needs 100 to 200 teleoperated demonstrations and controls at up to 22 Hz; its authors report a 16 percent gain on the SIMPLER benchmark and 13 percent on real-world tasks over strong baselines <Cite k="vipra" />. LAPA reports outperforming a state-of-the-art VLA trained with action labels on real-world language-conditioned tasks, and positive transfer when pretraining on human manipulation video only <Cite k="lapa" />. Exercise 7.3 fits the toy decoder.
+
+### Latent tokens for a whole body
+
+The same idea works one level down. GR00T N1.7 can drive a Unitree G1 humanoid through SONIC: the VLA "predicts compact latent action tokens that a learned whole-body controller decodes into full-body joint commands", including legs, arms and hands <Cite k="gr00t-n17-isaac-gr00t-repo" />. SONIC itself is a motion-tracking foundation model scaled from 1.2 to 42 million parameters on more than 100 million frames from 700 hours of motion capture; a unified token space lets the same policy take commands from VR teleoperation or from a VLA <Cite k="sonic" />.
+
+<Figure
+  id="7.4"
+  takeaway="The VLA chooses what the body should do in a few tokens; a controller trained on human motion decides how."
+  caption="The SONIC path in GR00T N1.7: latent action tokens out of the VLA, joint commands for legs, arms and hands out of the whole-body controller."
+  source="NVIDIA Isaac-GR00T repository (GR00T N1.7 README) and Luo et al. 2025 (arXiv 2511.07820)."
+  schematic
+>
+  <WholeBodyTokens />
+</Figure>
+
+Here the latent space is not discovered from video but designed as an interface. It does the same job: it separates the part that needs language and vision from the part that needs physics, so each can be trained on the data that suits it.
+
+## The family on the four-component template
+
+<Figure
+  id="7.5"
+  takeaway="Latent models use the same four components as world-action models, but predict features instead of pixels, which changes what each component costs."
+  caption="Chapter 4's template filled in for four styles of latent model. 'Future features' replaces future observations: nothing is rendered. Select a style; switch between training and inference."
+  source="placements from each paper's abstract: LAPA (arXiv 2410.11758), ViPRA (2511.07732), V-JEPA 2 (2506.09985), DINO-WM (2411.04983), VLA-JEPA (2602.10098), JEPA-WAM (2608.09381), LaWAM (2606.15768)."
+>
+  <LatentFourComponents />
+</Figure>
+
+## Why it exists, good at, bad at
+
+**Why it exists.** Pixel prediction wastes capacity on appearance and can take shortcuts through it; latent targets force the model to learn the transitions that matter for control. Latent actions unlock video with no actions, the largest layer of the data pyramid.
+
+**What it is good at.** Inference is cheaper than video generation, since nothing is rendered: LaWAM's reported 24-fold latency advantage over pixel-space WAMs is the clearest number <Cite k="lawam" />. Latent actions are the most direct bridge from human video to robot control, and they let one policy serve several bodies through per-robot decoders.
+
+**What it is bad at.** Latent targets are hard to inspect. A video prediction can be watched; a feature vector cannot, so debugging a latent model means training probes. Collapse needs active prevention. And the last step, from latent action to real command, is still trained per embodiment on real robot data.
+
+<Callout kind="in-practice">
+The scaling case for human video is now being made at industrial scale. Dyna Robotics reports pretraining a world-action model on more than one million hours of egocentric human video, a scaling law on held-out human data, and what it calls the first human-to-robot transfer scaling law<Claim /> <Cite k="dyna-2" />. It also reports a comparison against its own production VLA under matched data and training settings, which it reads as a lower bound on the world-action model's advantage<Claim /> <Cite k="dyna-2" />.
+</Callout>
+
+<Callout kind="caveat">
+Most data-efficiency numbers in this chapter come from simulated benchmarks (LIBERO, LIBERO-Plus, SIMPLER, RoboTwin) and from the authors' own real-robot tasks. LIBERO is close to saturated, so differences of a point or two say little. Prefer papers that report several benchmarks plus real robots, as JEPA-WAM and LaWAM do.
+</Callout>
+
+## In code
+
+The crate's strip world is small enough to read in one go: a block, a flickering background, a best-possible pixel predictor and an idealised encoder.
+
+<RustSnippet file="ch07-latent/src/lib.rs" region="strip" caption="The strip world behind figure 7.1" />
+
+The latent action side is a codebook and a displacement. Everything hard about real latent action models is hidden in `displacement`, which here is given rather than learned.
+
+<RustSnippet file="ch07-latent/src/lib.rs" region="latent_action" caption="A ring codebook and the idealised latent action" />
+
+## Exercises
+
+The stubs are in `rust/ch07-latent/src/exercises.rs`.
+
+<Exercise n="7.1" title="Quantize, and catch a collapse" crate="ch07-latent" test="ex7_1"
+  hints={["Nearest code by squared Euclidean distance; ties go to the lower index.", "Mark each code that receives at least one vector, then divide by the codebook size."]}>
+  Implement `quantize` and `usage`. Usage is a cheap health check for a latent action model: if most transitions land on one code, the codebook has collapsed. What usage would you expect from a healthy model trained on varied manipulation video, and what would you check first if it fell to one code?
+</Exercise>
+
+<Exercise n="7.2" title="What the pixel loss hears" crate="ch07-latent" test="ex7_2"
+  hints={["Render the actual next frame with flicker; the predictions never contain flicker.", "Compute the loss with the right action and with the wrong one, then take the difference."]}>
+  Implement `signal_share`: the fraction of a pixel loss caused by a wrong action. Average it over 40 seeds at several flicker levels and compare with figure 7.1. Then write two sentences on what this means for the gradient a pixel-predicting model receives on noisy footage.
+</Exercise>
+
+<Exercise n="7.3" title="Fit the per-robot decoder" crate="ch07-latent" test="ex7_3"
+  hints={["Accumulate the sums of z zᵀ and a zᵀ, then M = (Σ a zᵀ)(Σ z zᵀ)⁻¹.", "If the 2 × 2 matrix Σ z zᵀ is singular, the latent actions all lie on one line."]}>
+  Implement `fit_decoder` by least squares, returning `None` when the data cannot determine the map. The tests include demonstrations that move in only one direction. Explain why a real decoder trained on demonstrations of a single task can fail in the same way on a new task.
+</Exercise>
+
+<NotSure>
+
+**Whether latent prediction beats video prediction at matched compute.** The strongest comparisons are against older baselines or on simulated benchmarks. Real-robot comparisons between a latent world-action model and a video-generating one, with the same data and compute, are still rare.
+
+**What latent actions actually encode.** A learned latent action can carry camera motion, lighting or the identity of the person, not just the movement. Leakage-free objectives and flow-consistency losses are attempts to stop this, and there is no standard test that checks it.
+
+**How far the human-to-robot transfer goes.** The large human-video results (DreamDojo's 44,000 hours, Dyna-2's million hours) come from the organisations that built the models, measured on their own robots. Whether the same curves hold for other bodies, especially non-humanoid ones, is open.
+
+**Whether the decoder stays small.** The per-robot step is cheap in published work, at 100 to 200 demonstrations for ViPRA. It is not known whether that holds for dexterous hands or whole-body control, where the mapping from a latent action to joints is far less direct.
+
+</NotSure>
+
+## Further reading
+
+- V-JEPA 2, for the clearest demonstration of planning in feature space on real robots <Cite k="v-jepa-2" />.
+- DINO-WM, a compact and readable latent world model <Cite k="dino-wm" />.
+- LAPA, the paper that made latent actions a VLA pretraining recipe <Cite k="lapa" />.
+- VLA-JEPA, for the argument against pixel-anchored latent actions <Cite k="vla-jepa" />.
+- LaWAM, for latent subgoals in a world-action model <Cite k="lawam" />.
+- LeJEPA, for a principled answer to collapse <Cite k="lejepa" />.
+- SONIC, for latent tokens as an interface to a whole-body controller <Cite k="sonic" />.

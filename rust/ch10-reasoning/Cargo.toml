@@ -1,0 +1,12 @@
+[package]
+name = "ch10-reasoning"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chapter 10 companion code: the success-detection loop of an embodied reasoning model"
+
+[features]
+# Compile the reference solutions in place of the exercise stubs.
+solutions = []
+
+[dependencies]

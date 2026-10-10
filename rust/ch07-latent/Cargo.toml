@@ -1,0 +1,12 @@
+[package]
+name = "ch07-latent"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chapter 7 companion code: latent targets, latent actions and per-robot decoders"
+
+[features]
+# Compile the reference solutions in place of the exercise stubs.
+solutions = []
+
+[dependencies]

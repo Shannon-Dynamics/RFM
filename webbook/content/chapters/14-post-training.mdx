@@ -1,0 +1,173 @@
+import { PostTrainingPipeline } from "@/components/viz/PostTrainingPipeline";
+import { RlRoutes } from "@/components/viz/RlRoutes";
+import { AnchoredRefine } from "@/components/viz/AnchoredRefine";
+import { SteerPaths } from "@/components/viz/SteerPaths";
+import { MemoryTimeline } from "@/components/viz/MemoryTimeline";
+
+{/* Chapter 14. Brief: Book.md section 4, chapter 14. Last checked 9 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="14.1"
+  takeaway="A foundation model becomes useful on a particular job through a sequence of ever smaller, ever more specific steps; the data shrinks from hundreds of thousands of hours to minutes of practice."
+  caption="The post-training pipeline: pretrained base, fine-tuning, reinforcement learning, and deployment that keeps learning. Select a stage for what it uses and published examples."
+  source="SVRC, State of Robotics 2026 (industry survey); Gemini Robotics On-Device (Google DeepMind, June 2025); SERL (arXiv 2401.16013); RL Token (2604.23073); π*0.6 (2511.14759); SOP (2601.03044)."
+  schematic
+>
+  <PostTrainingPipeline />
+</Figure>
+
+## Why this chapter exists
+
+A pretrained robot foundation model is a generalist. It can attempt many tasks and does none of them as well as a specialist trained for one. Getting from the generalist to a robot that folds this laundry, in this home, quickly and without dropping it, is post-training. It is where most of the engineering effort in a deployment goes, and where the economics of chapter 2 come from: if a few hundred demonstrations and a few hours of practice turn a shared base into a specialist, the base is worth building.
+
+This chapter covers the four tools the field uses: fine-tuning on demonstrations, reinforcement learning (RL) from practice, steering through the prompt, and memory for tasks longer than a model's context. It leans on Physical Intelligence's published line of work, the most complete public record of post-training a VLA, and flags where that record comes from a single lab.
+
+After this chapter you will be able to:
+
+- explain why low-rank adaptation lets a team fine-tune a billion-parameter model on one GPU, and count what it trains;
+- compare the three RL routes of figure 14.2 by what each costs and what each risks, and say what an anchor to the pretrained policy buys;
+- describe how steering through the prompt and memory at two time scales extend what a model can do without new demonstrations.
+
+<Quote
+  who="Jianlan Luo, Chelsea Finn, Sergey Levine and co-authors"
+  role="authors of SERL"
+  source="SERL: A Software Suite for Sample-Efficient Robotic Reinforcement Learning (arXiv 2401.16013)"
+  href="https://arxiv.org/abs/2401.16013"
+  date="29 January 2024"
+>
+  It is acknowledged among practitioners that the particular implementation details of these algorithms are often just as important (if not more so) for performance as the choice of algorithm.
+</Quote>
+
+## Fine-tuning
+
+The first step is supervised fine-tuning: more imitation, on demonstrations of the target task. The economics are what made foundation models attractive. One industry survey reports that fine-tuning a pretrained VLA on 200 to 500 demonstrations now beats a task-specific policy trained from scratch on more than 1,000<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />. Model makers report smaller numbers for their own models: 50 to 100 demonstrations for Gemini Robotics On-Device<Claim /> <Cite k="gemini-robotics-on-device" />, and 130 post-training episodes per task in LingBot-VLA's evaluation <Cite k="lingbot-vla" />.
+
+Fine-tuning every weight of a multi-billion-parameter model needs a lot of GPU memory. Low-rank adaptation (LoRA) avoids it. It freezes each weight matrix $W$ and learns a small correction made of two thin matrices:
+
+$$
+\boxed{W' = W + B A, \qquad B \in \mathbb{R}^{d_\text{out} \times r},\ A \in \mathbb{R}^{r \times d_\text{in}}}
+$$
+
+The rank $r$ is small, typically 4 to 64, so $BA$ has far fewer parameters than $W$. In the language-model setting where it was introduced, LoRA cut the trainable parameters by 10,000 times and GPU memory by 3 times relative to full fine-tuning, with no loss in quality <Cite k="lora" />. For VLAs, OpenVLA's authors fine-tuned on consumer GPUs this way <Cite k="openvla" />. Exercise 14.1 counts the savings for a 2-billion-parameter backbone: at rank 16, LoRA trains about 1 percent of the weights.
+
+## Reinforcement learning: three routes
+
+Fine-tuning can only teach what the demonstrations show. To be faster or more reliable than the demonstrator, a policy has to practise: try, observe the outcome, and improve. That is reinforcement learning, and for a robot the question is where the practice happens. The WAM survey frames three routes <Cite k="lu2026-wam-survey" />, drawn in figure 14.2.
+
+<Figure
+  id="14.2"
+  takeaway="Simulation RL is cheap and risks the sim-to-real gap; real-world RL is faithful and costs robot time and supervision; world-model RL sits between and risks model bias."
+  caption="The three routes to RL for a robot policy. Select a corner for its loop, what it costs, what it risks, and published results."
+  source="framing after the WAM survey (arXiv 2609.16074); results from RL-Co (2602.12628), SERL (2401.16013), π*0.6 (2511.14759), RL Token (2604.23073), VLA-Precision (2609.04355), World-VLA-Loop (2602.06508), GigaBrain-0.5M* (2602.12099) and WMPO (2511.09515)."
+  schematic
+>
+  <RlRoutes />
+</Figure>
+
+**Simulation RL** trains in a physics simulator, with privileged state and unlimited resets, and pays at transfer. A February 2026 study fine-tuned OpenVLA and π0.5 with RL in simulation, while anchoring them with a supervised loss on real data so they would not forget. It reports 24 and 20 points of real-world success over real-only fine-tuning <Cite k="rl-co-sim-real" />.
+
+**Real-world RL** practises on the robot itself. It used to be impractical; SERL showed in 2024 that a careful implementation learns contact-rich tasks such as PCB assembly and cable routing in 25 to 50 minutes of training per policy <Cite k="serl" />. Physical Intelligence's RECAP method trains π*0.6 from demonstrations, its own autonomous attempts and human corrections during execution. It reports more than doubling throughput and roughly halving failures on its hardest tasks, such as folding laundry and making espresso<Claim /> <Cite k="pi06-star" />. Its RL Token work exposes a compact readout from the VLA and trains a small actor-critic head on it, anchored to the VLA. It reports up to 3 times faster execution on the hardest part of tasks such as Ethernet insertion within minutes to a few hours of practice <Cite k="pi-rl-token" />. At fleet scale, SOP streams experience and interventions from many robots to a cloud learner and sends back updated policies <Cite k="sop-online-post-training" />. VLA-Precision, from September 2026, targets high-precision tasks with large VLAs <Cite k="vla-precision" />.
+
+**World-model RL** practises in a learned model, chapter 8's RL environment role. GigaBrain-0.5M* reports about 30 percent gains over RECAP on laundry folding, box packing and espresso preparation by training with a world model<Claim /> <Cite k="gigabrain-05" />. World-VLA-Loop co-trains the world model and the policy so the model stays accurate where the policy goes <Cite k="world-vla-loop" />.
+
+### Staying close to what was learned
+
+Every route faces the same danger: a policy that chases reward can forget what pretraining taught it, or exploit a flaw in the reward or the model. The common defence is an anchor that keeps the improved policy close to the pretrained one. RL Token anchors its actor to the VLA, and RL-Co anchors to real data. The simplest form of the idea is reward-weighted improvement with a pull back towards the original:
+
+$$
+\boxed{\mu \leftarrow (1-\lambda)\,\frac{\sum_i e^{r(a_i)/\beta}\, a_i}{\sum_i e^{r(a_i)/\beta}} + \lambda\, \mu_0}
+$$
+
+Read it as: try a few actions $a_i$ around the current aim $\mu$, move towards the ones that earned more reward $r$, and then pull back by a fraction $\lambda$ towards the pretrained aim $\mu_0$. The temperature $\beta$ sets how strongly reward decides. Figure 14.3 runs it.
+
+<Figure
+  id="14.3"
+  takeaway="Practice moves the policy towards what earns reward; an anchor keeps it near what it learned in pretraining, which is safer and stops short of the best."
+  caption="A one-dimensional skill, such as how far to push a connector. The pretrained policy aims at 0; the task rewards 0.6. Practise and watch the aim move; change the anchor and how widely the policy explores."
+  source="this book's toy, in rust/ch14-post-training; anchoring follows RL Token (arXiv 2604.23073) and RL-Co (2602.12628)."
+  toy
+>
+  <AnchoredRefine />
+</Figure>
+
+Without an anchor, the aim reaches the best setting in about ten rounds. An anchor of 0.1 settles at 0.50 with a reward of 0.89, and an anchor of 0.3 stops at 0.31. Shrink the exploration and nothing moves at all, because a policy that never tries anything different has nothing to learn from. Real RL for VLAs is far more complex, but the trade-off between improvement and staying close is the same one.
+
+<Callout kind="key-paper" title="π*0.6 and RECAP (Physical Intelligence, November 2025)">
+RECAP is a practical recipe for RL on a large VLA. Pretrain with offline RL so the model conditions on how good an action is (an "advantage"). Then deploy it, collect autonomous attempts and expert interventions, fit a value function to that data, and fine-tune the policy to prefer actions the value function rates highly <Cite k="pi06-star" />. Its importance is less any single number than the demonstration that a generalist VLA can keep improving from its own deployment. Its limitation is the one this chapter's concession names: real-world RL results at this scale come from very few labs.
+</Callout>
+
+## Steering through the prompt
+
+Chapter 5 introduced π0.7's prompt, which says how to do a task as well as what to do: speed, quality, whether a mistake occurred, a subgoal image <Cite k="pi07" />. For post-training this is an alternative to collecting new data. A behaviour that exists somewhere in the training data can be selected by describing it, rather than taught again. Figure 14.4 shows the idea on a toy dataset of 24 demonstrations.
+
+<Figure
+  id="14.4"
+  takeaway="A model trained on varied demonstrations, each labelled with how it went, can be steered to the behaviour you want by describing it in the prompt."
+  caption="Twenty-four demonstrations of going around an obstacle: above or below, fast or slow, some with a fumble. Give the model three prompts and sample what it does."
+  source="this book's toy; the prompt slots follow π0.7 (arXiv 2604.15483), sections C to E."
+  toy
+>
+  <SteerPaths />
+</Figure>
+
+With the task alone, the model imitates the whole dataset, fumbles and slow runs included. Adding the metadata narrows it to fast, clean demonstrations, on either route. Adding a subgoal image of passing above narrows it to one route. Nothing was retrained between the three prompts. The limits are the same as in chapter 5: the behaviour must be in the data, and the labels must be right.
+
+## Memory for long tasks
+
+A VLA that sees only the last moment cannot remember that the stove is on or that it has already flipped the sandwich. Simply feeding it more past frames is expensive and does not scale to minutes. Physical Intelligence's MEM combines two memories: a short-term memory of recent video, compressed by a video encoder, which covers occlusion; and a long-term memory in text, which records what has been done <Cite k="pi-mem" />. Its authors report policies performing tasks of up to fifteen minutes, such as cleaning a kitchen or making a grilled cheese sandwich, and adapting manipulation strategies in context <Cite k="pi-mem" />. π0.7 includes a MEM-style video history encoder <Cite k="pi07" />.
+
+<Figure
+  id="14.5"
+  takeaway="Short-term video memory answers 'where did that just go?'; long-term text memory answers 'have I done that yet?'; a long task needs both."
+  caption="A fifteen-minute cooking task with the events a policy must remember. Move through time to see what each memory holds, and which questions each can answer."
+  source="after MEM (Torne et al. 2026, arXiv 2603.03596); events are this book's illustration of its grilled-cheese task, as in rust/ch14-post-training."
+  schematic
+>
+  <MemoryTimeline />
+</Figure>
+
+## In code
+
+The crate's refinement loop is the boxed equation, with deterministic attempts so runs can be compared.
+
+<RustSnippet file="ch14-post-training/src/lib.rs" region="refine" caption="The pretrained aim, the task's reward, and reproducible exploration" />
+
+## Exercises
+
+The stubs are in `rust/ch14-post-training/src/exercises.rs`.
+
+<Exercise n="14.1" title="What LoRA trains" crate="ch14-post-training" test="ex14_1"
+  hints={["A full matrix has d_in × d_out entries; a rank-r adapter has r × (d_in + d_out).", "Sum over every adapted matrix."]}>
+  Implement `trainable`. Then estimate, at two bytes per parameter, how much memory the adapter weights need at rank 16, and compare with the full model.
+</Exercise>
+
+<Exercise n="14.2" title="Improve from reward, stay anchored" crate="ch14-post-training" test="ex14_2"
+  hints={["For each round, compute the attempts from the current aim before moving it.", "Apply the anchor after computing the reward-weighted mean."]}>
+  Implement `refine`. Then find the smallest exploration spread for which the unanchored policy reaches the best setting within 30 rounds, and explain why exploration and anchoring pull in opposite directions.
+</Exercise>
+
+<Exercise n="14.3" title="Two memories" crate="ch14-post-training" test="ex14_3"
+  hints={["Keep only events at or before now.", "The short-term memory holds events newer than now minus the window."]}>
+  Implement `recall`. Then list three questions about a task you know whose answers need long-term memory, and one that needs short-term memory, and say which modality, video or text, suits each.
+</Exercise>
+
+<NotSure>
+
+**How general real-world RL is.** The most impressive real-world RL results for large VLAs come from one or two labs, on their own robots and tasks. Whether the recipes transfer to other teams, robots and task types is not yet known.
+
+**Whether world-model RL beats real-world RL.** GigaBrain-0.5M*'s comparison against RECAP is the clearest head-to-head, and it is the maker's own. Chapter 8's warnings about model bias apply in full.
+
+**How much steering replaces data.** Prompting for speed and quality selects behaviour the data already contains. How far that extends to behaviour the data never showed, and how robust it is when labels are noisy, is open.
+
+**What memory should hold.** MEM's split into video and text is one answer. Others, such as learned latent memories, have not been compared on the same tasks.
+
+</NotSure>
+
+## Further reading
+
+- LoRA, for the adaptation method most VLA fine-tuning uses <Cite k="lora" />.
+- SERL, for practical real-world RL and why implementation matters <Cite k="serl" />.
+- π*0.6 and RECAP, for RL on a large VLA from deployment data <Cite k="pi06-star" />.
+- RL Token, for fast online RL anchored to a VLA <Cite k="pi-rl-token" />.
+- RL-Co, for simulation RL that does not forget the real world <Cite k="rl-co-sim-real" />.
+- MEM, for memory over fifteen-minute tasks <Cite k="pi-mem" />.

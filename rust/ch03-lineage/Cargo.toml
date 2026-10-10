@@ -1,0 +1,12 @@
+[package]
+name = "ch03-lineage"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chapter 3 companion code: a lineage graph of robot foundation models"
+
+[features]
+# Compile the reference solutions in place of the exercise stubs.
+solutions = []
+
+[dependencies]

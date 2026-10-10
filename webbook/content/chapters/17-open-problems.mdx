@@ -1,0 +1,176 @@
+import { ProblemMap } from "@/components/viz/ProblemMap";
+import { SeverityAttention } from "@/components/viz/SeverityAttention";
+import { ConsistencyViews } from "@/components/viz/ConsistencyViews";
+import { MonitorSim } from "@/components/viz/MonitorSim";
+
+{/* Chapter 17. Brief: Book.md section 4, chapter 17. Last checked 9 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="17.1"
+  takeaway="The first problems on the list cluster on the families that predict the future; evaluation and safety cut across every family."
+  caption="Ten open problems linked to the families they hit hardest. Select a problem for a plain statement, a failure you have already seen earlier in the book, and where."
+  source="problem list after the WAM survey's section VI (arXiv 2609.16074), the April 2026 comprehensive review and the industrial readiness survey (2603.06749); links are the authors' reading."
+>
+  <ProblemMap />
+</Figure>
+
+## Why this chapter exists
+
+The previous sixteen chapters described what robot foundation models can do. This one collects what they cannot yet do, in the form the 2026 surveys converge on. The WAM survey names four major bottlenecks: action grounding, spatial consistency, closed-loop policy improvement and real-time inference <Cite k="lu2026-wam-survey" />. The April 2026 comprehensive review and the industrial readiness survey add data, evaluation and safety <Cite k="psiris2026-fm-robotics-review,industrial-rfm-survey-2026" />. The result is ten problems. Each is restated here in plain language, with one concrete failure taken from earlier in the book, so the problem is something you have seen rather than something you are told.
+
+Two of the ten are under-researched relative to their importance: evaluation and safety. The source base for them is thin, and the chapter says so rather than padding.
+
+After this chapter you will be able to:
+
+- state each of the ten problems in a sentence and point to a failure that illustrates it;
+- say which problems belong to particular families and which cut across all of them, using figure 17.1;
+- explain why evaluation and safety sit in the severe but under-researched corner of figure 17.2.
+
+<Quote
+  who="Kaan Dogrusoz"
+  role="chief executive officer of Weave Robotics"
+  source="The Wall Street Journal, 25 December 2025, as quoted in Rodney Brooks, Predictions Scorecard, 2026 January 01"
+  href="https://rodneybrooks.com/predictions-scorecard-2026-january-01/"
+  date="25 December 2025"
+>
+  There's a lot of great technological work happening, a lot of great talent working on these, but they are not yet well defined products.
+</Quote>
+
+## How severe, how studied
+
+<Figure
+  id="17.2"
+  takeaway="Most problems get research attention in proportion to their severity; evaluation and safety are the exceptions, severe and comparatively neglected."
+  caption="The ten problems placed by how severe they are for deployment and how much research attention they receive. Select a problem."
+  source="the authors' judgement as of October 2026, from the volume and recency of work on each problem in this book's sources."
+  schematic
+>
+  <SeverityAttention />
+</Figure>
+
+The placement is a judgement, made from how much recent work in this book's sources addresses each problem. Latency, action alignment and neural simulation receive steady attention, with many 2026 papers on each. Evaluation and safety receive little. A handful of benchmark critiques and one industrial survey stand against a deployment record that grows every quarter.
+
+## 1. Action alignment
+
+A video or latent model learns how the world moves; a robot needs joint commands. Turning one into the other without destroying what the model learned is the first bottleneck the WAM survey names. Its recommendations are staged training that aligns predicted motion to executable actions, and protection of the pretrained prior through frozen backbones, alignment layers and residual action heads <Cite k="lu2026-wam-survey" />. **The failure** is figure 8.4's: a generated rollout in which every frame looks right and the implied motion is impossible for the robot <Cite k="eva" />.
+
+## 2. World-action factorisation
+
+Should futures and actions be learned together, and should futures still be generated at test time? Fast-WAM's answer is to train with video and drop it at inference <Cite k="fast-wam" />. LingBot-VLA 2.0 arrives at a similar design from the VLA side, with future prediction as a training-only proxy task <Cite k="lingbot-vla-2" />. **The failure** is paying for video generation at every step, the cost curve of figure 6.6, for a benefit a training-only objective might have given. A March 2026 robustness study complicates the picture. It found world-action models robust under perturbation, with LingBot-VA reaching 74.2 percent on RoboTwin 2.0-Plus and Cosmos Policy 82.2 percent on LIBERO-Plus, while VLAs such as π0.5 matched them on some tasks only with extensive and varied training <Cite k="wam-robustness-study" />.
+
+## 3. Spatial and multi-view consistency
+
+Robots usually have several cameras, and a model that generates the future generates several views of it. If those views disagree about where an object is, the plan built on them is wrong in a way no single view reveals. The WAM survey lists multi-view consistency among its open challenges <Cite k="lu2026-wam-survey" />, and VLA-MBPO needed a dedicated decoding scheme to enforce it <Cite k="vla-mbpo" />. Figure 17.3 shows the check that exposes the problem.
+
+<Figure
+  id="17.3"
+  takeaway="A generated view can be wrong by a few degrees and look perfectly plausible; intersecting two views and checking a third exposes it."
+  caption="Three cameras watch the same future. Views A and B are intersected to locate the object; view C checks the result. Put an error into camera B's generated view."
+  source="this book's toy, in rust/ch17-open-problems; the problem as named in the WAM survey (arXiv 2609.16074), section VI-C."
+  toy
+>
+  <ConsistencyViews />
+</Figure>
+
+The geometry is simple. Two bearings from cameras at known positions meet at one point $\hat p$. A third camera's predicted bearing $\theta_C$ should point at it, so the disagreement is
+
+$$
+\boxed{\Delta = \big|\, \theta_C - \operatorname{bearing}(C, \hat p) \,\big|}
+$$
+
+An error of 4 degrees in one generated view moves the located object by about 17 centimetres and makes the third view disagree by about 2 degrees: invisible frame by frame, obvious when compared. **The failure** generalises chapter 9's point: when futures are generated as images rather than as geometry, consistency is something to check, not something to assume.
+
+## 4. Long-horizon memory
+
+A policy that sees only the last moment forgets what it has done. MEM's combination of video short-term memory and text long-term memory reaches tasks of up to fifteen minutes <Cite k="pi-mem" />, and the WAM survey lists long-horizon memory among its open challenges <Cite k="lu2026-wam-survey" />. **The failure** is figure 14.5's robot ten minutes into cooking that no longer knows whether the stove is on. The open question is architectural: memory inside the model, or an agentic harness around it that keeps state, as an embodied reasoning model does (chapter 10).
+
+## 5. Neural simulators and closed-loop learning
+
+Can a learned world model be trusted as a training environment? Errors in an imagined rollout compound: each predicted frame is the input to the next, so an error $e_t$ grows roughly as
+
+$$
+\boxed{e_{t+1} = (1+\gamma)\, e_t + \varepsilon}
+$$
+
+where $\gamma$ is how much the model amplifies an existing error and $\varepsilon$ is the new error it adds each step. With $\gamma = 0.1$, thirty steps turn a per-step error of 0.01 into more than 1.6, while showing the model a real observation every five steps keeps it near 0.01. Exercise 17.1 computes both. **The failure** is figure 8.3's policy that finds the model's blind spot, and figure 6.4 shows the drift itself. WorldArena found that visual quality is a poor guide to whether a world model is useful for training or evaluation <Cite k="worldarena" />.
+
+## 6. Inference latency and compute
+
+Large models are slow and robots are impatient. The WAM survey lists inference efficiency among its four bottlenecks <Cite k="lu2026-wam-survey" />, and a cross-accelerator study found VLA inference split between a compute-bound backbone and a memory-bound action expert, wasting hardware <Cite k="vla-xpu-deployment" />. **The failure** is figure 15.1's robot that is blind for two seconds while finishing a chunk. This is the problem with the most mature solutions (chapter 18), but world-action models that generate video at test time make it worse again.
+
+## 7. Data scarcity and provenance
+
+The top of the pyramid, action-labelled robot data, stays small and expensive, and the reported hours of different sources are not a common currency (chapter 13). **The failure** is figure 13.3's two curves that fit the same scaling points and disagree completely beyond them, and the unsourced survey claim that 40 percent synthetic data matches real data<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />.
+
+## 8. Evaluation
+
+The field's benchmarks are fragmented and mostly simulated, its main public real-robot leaderboard covers short tasks that evaluators choose, and there is no shared protocol for long tasks on real robots (chapter 15). The evidence that this matters is now direct. LIBERO-Plus found success falling from 95 percent to below 30 percent under modest perturbations, and models ignoring their instructions <Cite k="libero-plus" />. A study of the BEHAVIOR-1K challenge argued that final-state metrics exaggerate performance and hide safety violations <Cite k="vla-open-world-eval" />. BeTTER found state-of-the-art VLAs failing "catastrophically" in dynamic scenarios that static benchmarks never test <Cite k="better-embodied-reasoning" />. **The failure** is figure 11.4's: with the 20 trials common in papers, a real 10-point improvement is detected less than one time in five.
+
+## 9. Safety, verification and certification
+
+Functional-safety standards such as ISO 10218 and ISO/TS 15066 assume components that can be specified and tested <Cite k="industrial-rfm-survey-2026" />. A learned policy cannot be, so today it sits outside the certifiable boundary, wrapped by an independent monitor (figure 15.5). The industrial survey found the highest-rated model fulfilling 6 percent of its safety and compliance criteria <Cite k="industrial-rfm-survey-2026" />. Google's model card for Gemini Robotics ER 2 rules out safety-critical uses <Cite k="gemini-robotics-er2" />, and Brooks notes that no one has yet solved the humanoid version of the emergency stop <Cite k="brooks-predictions-2026" />.
+
+<Figure
+  id="17.4"
+  takeaway="An independent monitor can keep a learned policy inside a speed and distance envelope without understanding the policy; what it cannot do is make the policy itself verifiable."
+  caption="A learned policy commands speeds while a person approaches and leaves. The monitor clamps every command to a speed limit and stops the robot inside the protective distance. Make the policy more aggressive."
+  source="this book's toy, in rust/ch17-open-problems; envelope-style supervision as discussed in the industrial readiness survey (arXiv 2603.06749)."
+  toy
+>
+  <MonitorSim />
+</Figure>
+
+The monitor's rule fits in one line:
+
+$$
+\boxed{u_t = \begin{cases} 0 & \text{if } d_t < d_{\text{stop}} \\ \operatorname{clip}(v_t,\ -v_{\max},\ v_{\max}) & \text{otherwise} \end{cases}}
+$$
+
+where $v_t$ is the policy's command, $d_t$ the distance to the nearest person and $u_t$ what reaches the motors. A rule this simple can be certified; the policy it supervises cannot. **The failure** that remains is everything inside the envelope. A monitor stops the robot from moving too fast near a person. It does not stop the robot from carefully putting a knife in the wrong place.
+
+## 10. Embodiment transfer and the humanoid question
+
+Does whole-body control belong inside the foundation model, or in a learned controller beneath it? GR00T N1.7 answers with latent action tokens decoded by SONIC <Cite k="gr00t-n17-isaac-gr00t-repo,sonic" />, and Helix with a fast controller under a slow reasoner <Cite k="figure-helix" />. **The failure** is a model that transfers from one arm to another but must relearn everything for a new body, or that leaves balance to a layer the foundation model cannot see (figure 16.2).
+
+## In code
+
+The two geometric helpers behind figure 17.3 are a bearing and the smallest difference between two angles.
+
+<RustSnippet file="ch17-open-problems/src/lib.rs" region="views" caption="Cameras that report bearings, and a three-camera rig" />
+
+## Exercises
+
+The stubs are in `rust/ch17-open-problems/src/exercises.rs`.
+
+<Exercise n="17.1" title="Errors that compound" crate="ch17-open-problems" test="ex17_1"
+  hints={["Update the error first, then reset it if this step is a regrounding step.", "Steps count from 1."]}>
+  Implement `rollout_error`. Then find the longest imagination horizon for which the error stays below 0.1 with growth 0.1 and noise 0.01, and relate it to the chunk lengths of chapter 5.
+</Exercise>
+
+<Exercise n="17.2" title="Do the views agree?" crate="ch17-open-problems" test="ex17_2"
+  hints={["Write each ray as start + s × direction and solve the 2 × 2 system for s.", "Measure the miss with the smallest difference between angles, not a raw subtraction."]}>
+  Implement `consistency`. Then find how large an error in one view must be before a 1 degree tolerance on the third view catches it, and say how the camera layout changes the answer.
+</Exercise>
+
+<Exercise n="17.3" title="The monitor" crate="ch17-open-problems" test="ex17_3"
+  hints={["Check the distance first: inside the protective distance the command is zero.", "Count a step as changed whenever the executed value differs from the command."]}>
+  Implement `monitor`. Then name two failures a monitor of this kind cannot prevent, and for each say which chapter of this book discusses a partial remedy.
+</Exercise>
+
+<NotSure>
+
+**Whether the list is right.** These ten problems are what the 2026 surveys converge on. Lists like this tend to miss the problem that turns out to matter, often something that looks like engineering rather than research.
+
+**How the problems interact.** Latency limits how much world modelling a robot can afford at test time; data limits how good the world model can be; evaluation limits whether anyone can tell. Treating them one at a time, as this chapter does, understates how much progress on one depends on the others.
+
+**Whether evaluation and safety will stay neglected.** Both are hard to publish and expensive to do. That may change quickly if a serious incident or a regulation forces it; this book cannot predict which comes first.
+
+</NotSure>
+
+## Further reading
+
+- The WAM survey's section on open challenges <Cite k="lu2026-wam-survey" />.
+- The April 2026 comprehensive review's challenges and future directions <Cite k="psiris2026-fm-robotics-review" />.
+- The robustness study comparing world-action models and VLAs <Cite k="wam-robustness-study" />.
+- LIBERO-Plus and BeTTER, for what benchmarks hide <Cite k="libero-plus,better-embodied-reasoning" />.
+- The industrial readiness survey, for safety and integration as research problems <Cite k="industrial-rfm-survey-2026" />.

@@ -1,0 +1,171 @@
+import { FamilyGrid } from "@/components/viz/FamilyGrid";
+import { MinimumInterface } from "@/components/viz/MinimumInterface";
+import { ScopeSorter, ColumnSorter } from "@/content/ch01/figures";
+
+{/* Chapter 1. Brief: Book.md section 4, chapter 1. Last checked 3 October 2026. */}
+
+<Figure
+  id="1.1"
+  takeaway="Seven families, one grid: what a model predicts, across, against the space it predicts in, down."
+  caption="The book's map. Each filled cell is a family of models; the colour is the family's, fixed for the whole book. Select a cell to open its chapter."
+  source="Book.md section 3, core diagram 1."
+>
+  <FamilyGrid />
+</Figure>
+
+## Why this chapter exists
+
+"Robot foundation model" is used for almost anything a robotics company ships in 2026. Vendors apply it to vision-language-action policies, to video generators, to reasoning models that never touch a motor, and sometimes to a fine-tuned version of last year's product. A term that covers everything explains nothing, so this chapter pins it down: precisely enough to be useful, loosely enough to survive the next twelve months of releases.
+
+The definition matters for the rest of the book in a practical way. The seven families of Part II are seven answers to two questions about a model: what does it predict, and in what space? If you can answer those from an abstract, you can place a new model within a minute and know which chapter explains how it works and where it breaks.
+
+After this chapter you will be able to:
+
+- say what makes a model a robot foundation model, and name three things that are useful to roboticists but are not;
+- state the minimum interface every such model shares, and the one optional output that separates reactive models from world-action models;
+- place a new model on the family grid from its abstract, and recognise the cases that sit on a boundary.
+
+<Quote
+  who="Carolina Parada"
+  role="head of robotics, Google DeepMind"
+  source="Gemini Robotics brings AI into the physical world, Google DeepMind blog"
+  href="https://deepmind.google/blog/gemini-robotics-brings-ai-into-the-physical-world/"
+  date="12 March 2025"
+>
+  To be useful and helpful to people, AI models for robotics need three principal qualities: they have to be general, meaning they’re able to adapt to different situations; they have to be interactive, meaning they can understand and respond quickly to instructions or changes in their environment; and they have to be dexterous, meaning they can do the kinds of things people generally can do with their hands and fingers, like carefully manipulate objects.
+</Quote>
+
+## A working definition
+
+Foundation models, in the sense the robotics surveys borrow from language and vision, are large networks trained on massive, heterogeneous data that are then adapted to many downstream tasks <Cite k="psiris2026-fm-robotics-review" />. A 2023 survey put the robotics version of the question directly: how can existing foundation models from language and vision be used for general-purpose robots, and what would a robotics-specific foundation model look like <Cite k="hu2023-general-purpose-robots-survey" />? Three years later the second question has dozens of answers.
+
+This book uses a definition with three tests. A **robot foundation model** is a model that:
+
+1. **produces something a robot can act on**: an action chunk, a prediction of the future that is used for control, or a plan that a controller below it executes;
+2. **was pretrained broadly**: across many tasks, many robot bodies (embodiments), or web-scale video and images, rather than on one task in one lab;
+3. **adapts cheaply**: by prompting, by conditioning on a goal, or by fine-tuning on a few hundred demonstrations rather than retraining.
+
+The tests are deliberately about function, not architecture or size. They admit SmolVLA, a policy designed to be trained on a single GPU <Cite k="smolvla" />, and exclude the largest chat model that cannot move an arm.
+
+### The minimum interface
+
+Every model in the book, whatever its internals, presents the same interface to the robot: observations and language in, an action chunk out. Observations are recent camera frames plus the robot's own joint state; the instruction is a sentence; the output is $H$ actions to execute at a fixed control rate. One inference produces many motor commands, which is what makes slow models usable on fast robots (chapter 2 shows the arithmetic).
+
+The one optional output is the future. A world-action model also returns what it expects to see. That single addition is the line between chapter 5's reactive models and chapter 6's world-action models, and it is why the grid has a column for it.
+
+<Figure
+  id="1.2"
+  takeaway="All seven families share one interface; predicting the future is an optional second output."
+  caption="Inputs on the left, the model in the middle, the action chunk on the right. Switch to the world-action form to add predicted futures, and change the chunk length H."
+  source="Book.md chapter 1, figure F1.3."
+>
+  <MinimumInterface />
+</Figure>
+
+In code the interface is one required method and one optional one. The chapter's Rust crate states it as a trait, and every later chapter's code implements some version of it:
+
+<RustSnippet file="ch01-interface/src/lib.rs" region="interface" caption="The minimum interface" />
+
+### What the definition leaves out
+
+Three neighbours are close enough to confuse and different enough to keep out.
+
+**A task-specific policy** can be excellent: a diffusion policy trained on two hundred demonstrations of one task can be more reliable at that task than any generalist. It fails the second test. It has no breadth to adapt from, and a new task means new data and new training.
+
+**A classical modular pipeline** splits perception, state estimation, planning and control into separate blocks, each designed and verified on its own. Its strengths, debuggability and certifiability, are exactly what learned models gave up (chapter 3 tells the story, chapter 15 counts the cost). It fails the first test as a whole: no single learned model produces the action.
+
+**A plain vision-language model** answers questions about images. It has the breadth and adapts by prompting, but produces nothing a robot acts on. Fine-tuned to output actions it becomes the backbone of a chapter 5 model; trained for spatial reasoning and success detection it becomes a chapter 10 model. Off the shelf it is neither.
+
+<Figure
+  id="1.3"
+  takeaway="The definition is a sorting rule: three tests, applied to what a system produces and how it was trained."
+  caption="Eight systems a roboticist might call foundation models. Sort them, then check against the book's reading and its reason."
+  source="definitions from this chapter; DreamZero's adaptation figure is the authors' claim (Ye et al. 2026, arXiv 2602.15922)."
+>
+  <ScopeSorter />
+</Figure>
+
+The industrial survey of March 2026 shows how large the category already is under a definition like this one: it evaluates 324 manipulation-capable robot foundation models against 149 readiness criteria <Cite k="industrial-rfm-survey-2026" />. Its verdict is the useful corrective to vendor language. Industrial maturity is limited and uneven, and even the highest-rated models satisfy only a fraction of the criteria.
+
+## Two questions that sort everything
+
+The family grid of figure 1.1 asks two questions of every model.
+
+**What does it predict?** Actions only, as in a reactive vision-language-action model (VLA); actions together with predicted futures, as in a world-action model (WAM); futures only, as in a world model used to plan or to generate data; or a plan in language, as in an embodied reasoning model.
+
+**In what space?** Raw pixels or the latents of a video model; learned feature latents that are never decoded back to pixels (the JEPA approach of chapter 7); explicit geometry such as point clouds, Gaussians or occupancy grids (chapter 9); language or action tokens; or continuous actions with no language backbone at all (chapter 11's large behavior models).
+
+The answers decide almost everything that matters in practice: which data a model can learn from, what it costs to run, and how it fails. A model that predicts in pixels can learn from internet video; a model that predicts only actions needs action-labelled robot data; a model that predicts in geometry needs depth or point clouds. Chapter 13's data pyramid makes this precise.
+
+<Figure
+  id="1.4"
+  takeaway="Reading the column off an abstract is the fastest way to know which chapter explains a model."
+  caption="Five models described the way their papers describe them. Choose the column for each, then check."
+  source="this chapter; Fast-WAM's placement is discussed in chapter 6 (Yuan et al. 2026, arXiv 2603.16666)."
+>
+  <ColumnSorter />
+</Figure>
+
+The chapter's crate turns the two questions into a function. A model card records what a model outputs and in what space; placing it on the grid is then mechanical, and exercise 1.1 asks you to write it:
+
+<RustSnippet file="ch01-interface/src/lib.rs" region="grid" caption="The facts that decide a model's cell" />
+
+### Three boundary cases
+
+The grid is approximate on purpose. Three models show how to handle a model that fits two cells.
+
+**π0.7** conditions on goal images as well as language: you can show it what the end of the task should look like <Cite k="pi07" />. The WAM survey reads it as a goal-conditioned world-action model for exactly that reason <Cite k="lu2026-wam-survey" />. This book places it with the reactive models of chapter 5, because at inference it never generates a future: the goal image is an input, not a prediction. The rule the book uses for boundary cases is to place a model by what it predicts at inference, and to say so when training tells a different story.
+
+**Octo** is an open generalist policy trained on 800,000 trajectories from Open X-Embodiment and instructed by language commands or goal images <Cite k="octo" />. It could sit with the VLAs of chapter 5 or the large behavior models of chapter 11. Its language encoder is small and its strength is the scaled imitation recipe, so chapter 11 discusses it as the bridge between the two.
+
+**GR00T N1.7** is a VLA by the grid's first reading, built on a Cosmos-Reason2 backbone with a diffusion transformer action head. For whole-body humanoid control it emits compact latent action tokens that a separate learned controller expands into joint commands <Cite k="gr00t-n17-isaac-gr00t-repo" />. That path is a latent-action interface, chapter 7's territory. One product, two families, depending on the robot it drives.
+
+## How the families map to the surveys
+
+The seven families are this book's synthesis, not a published taxonomy, and a reader who knows the surveys should be able to move between them. The WAM survey of September 2026 builds world-action models from four research threads: model-based reinforcement learning and world models, video generative models, latent action pretraining, and vision-language-action models <Cite k="lu2026-wam-survey" />. The April 2026 comprehensive review organises the wider field by model type (language, vision, vision-language and vision-language-action models), architecture, learning paradigm and application <Cite k="psiris2026-fm-robotics-review" />. A June 2026 survey of world-action models offers two further views of the same models <Cite k="wam-survey-shen-2026" />.
+
+| Book family | Chapter | Closest thread in the WAM survey | Closest model type in the 2026 review |
+|---|---|---|---|
+| Reactive VLAs | 5 | Vision-language-action models | VLAs |
+| World-action models | 6 | All four threads combined | VLAs with predictive components |
+| Latent prediction and latent actions | 7 | Latent action pretraining; world models | Vision foundation models plus VLAs |
+| World models as simulators | 8 | World models; video generative models | Vision foundation models |
+| Geometry-first models | 9 | World models (structured, 3D) | Vision foundation models |
+| Embodied reasoning | 10 | Not a WAM thread | Vision-language models |
+| Large behavior models | 11 | Not a WAM thread | Learning paradigms (imitation) |
+
+## Exercises
+
+The stubs are in `rust/ch01-interface/src/exercises.rs`; reference solutions compile with `--features solutions`.
+
+<Exercise n="1.1" title="Place a model" crate="ch01-interface" test="ex1_1"
+  hints={["The column depends only on the three output flags; the row is the card's space.", "Order the checks so that a model with both actions and futures is not caught by the actions-only branch."]}>
+  Implement `place_on_grid`: return the grid cell for a model card, or `None` for a model that predicts nothing the grid covers. The tests place π0.5, DreamZero, V-JEPA 2-AC, PointWorld, Gemini Robotics-ER 1.6 and TRI's large behavior model, and expect a perception-only model to have no cell.
+</Exercise>
+
+<Exercise n="1.2" title="Apply the definition" crate="ch01-interface" test="ex1_2"
+  hints={["Write the three tests from 'A working definition' as three booleans and combine them.", "Embodied training is what separates an embodied reasoning model from a general chat model writing plans."]}>
+  Implement `is_in_scope` with the book's three tests plus the requirement of embodied training. The tests expect eight systems in and three out: a perception-only model, a general language model planning over hand-written skills, and a single-task diffusion policy.
+</Exercise>
+
+<Exercise n="1.3" title="Check a chunk before it runs" crate="ch01-interface" test="ex1_3">
+  Implement `chunk_duration_ms`: reject empty chunks, chunks whose actions have different or zero dimension, and non-positive rates; otherwise return how long the chunk takes to execute. A 25-action chunk at 50 Hz lasts half a second, which is the window chapter 2 uses to hide inference latency.
+</Exercise>
+
+<NotSure>
+
+**Whether the definition will hold.** Vendors use the term loosely, and this book's three tests exclude some products marketed as robot foundation models and include some research systems that are not marketed that way. The test most likely to need revision is the third: as models get better at prompting and in-context learning (GEN-1.5 claims to learn a new task from a single demonstration <Cite k="gen15" />), "adapts cheaply" may stop distinguishing anything.
+
+**Whether seven is the right number.** The families are this book's synthesis. They merge distinctions the surveys keep apart and split others the surveys merge. Embodied reasoning and large behavior models are the most likely to be folded into neighbouring chapters if the field consolidates.
+
+**Where the boundary cases go.** π0.7, Octo and GR00T N1.7 each fit two cells, and the rule "place by what is predicted at inference" is a choice. A reader who places by training objective will move several models, Fast-WAM among them, into different chapters.
+
+</NotSure>
+
+## Further reading
+
+- The April 2026 comprehensive review, for the broadest map of the field and its five research phases <Cite k="psiris2026-fm-robotics-review" />.
+- The 2023 survey and meta-analysis that first asked what a robotics-specific foundation model would look like <Cite k="hu2023-general-purpose-robots-survey" />.
+- The industrial readiness survey, for how far the category still is from the factory floor <Cite k="industrial-rfm-survey-2026" />.
+- A 2025 anatomy of vision-language-action models, from modules to milestones <Cite k="vla-anatomy" />.
+- Two earlier surveys of foundation models for manipulation and robot learning <Cite k="li2024-fm-manipulation-survey,xiao2023-robot-learning-fm-survey" />.

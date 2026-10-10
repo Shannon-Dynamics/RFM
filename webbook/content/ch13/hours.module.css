@@ -1,0 +1,8 @@
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr)); gap: 0.9rem; font-family: var(--font-ui); }
+.card { border: 1px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); padding: 0.85rem 0.95rem; font-size: 0.92rem; line-height: 1.4; display: grid; align-content: start; gap: 0.4rem; }
+.card h4 { margin: 0; font-size: 1.05rem; }
+.example { margin: 0; color: var(--ink-2); font-size: 0.88rem; }
+.card dl { margin: 0; display: grid; gap: 0.45rem; border-top: 1px solid var(--rule-strong); padding-top: 0.5rem; }
+.card dt { font-size: 0.8rem; color: var(--ink-3); }
+.card dd { margin: 0; color: var(--ink); }
+.source { margin: 0; font-size: 0.8rem; color: var(--ink-3); }

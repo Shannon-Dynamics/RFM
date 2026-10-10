@@ -1,0 +1,234 @@
+import { VlaAnatomy } from "@/components/viz/VlaAnatomy";
+import { DualRate } from "@/components/viz/DualRate";
+import { PromptAnatomy } from "@/components/viz/PromptAnatomy";
+import { OpenEcosystem } from "@/content/ch05/figures";
+
+{/* Chapter 5. Brief: Book.md section 4, chapter 5. Last checked 3 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="5.1"
+  takeaway="Every reactive VLA is a pretrained vision-language model plus a way to get actions out; the three sub-families differ only in that last part, and the difference decides the cost."
+  caption="One backbone, three heads. Choose a head to watch how it produces a chunk, and compare how many passes must run one after another for one second of bimanual motion."
+  source="architectures from RT-2 (arXiv 2307.15818), OpenVLA (2406.09246), π0 (2410.24164), GR00T N1 (2503.14734) and Figure AI's Helix post; pass counts computed in rust/ch05-reactive-vla."
+>
+  <VlaAnatomy />
+</Figure>
+
+## Why this chapter exists
+
+The models that made "robot foundation model" a household phrase in robotics labs are almost all of one kind. Take a vision-language model (VLM) that has learned from the web what a mug is and what "put it in the sink" means, and teach it to output robot actions. Observations and an instruction go in; a short chunk of actions comes out. Nothing in the model predicts what the world will look like next. This book calls that family reactive vision-language-action models, or VLAs.
+
+They are the reference point for everything in Part II. World-action models (chapter 6) were invented to fix what VLAs get wrong; large behavior models (chapter 11) drop the language backbone VLAs depend on; embodied reasoning models (chapter 10) sit above a VLA and tell it what to do. Knowing exactly what a VLA does, and does not do, makes the other families easy to place.
+
+After this chapter you will be able to:
+
+- name the three sub-families of VLA, explain with figure 5.1 what each costs per action chunk, and place a new model in one of them from its paper;
+- explain with the simulation in figure 5.2 why the fastest humanoid VLAs split into a slow reasoner and a fast controller, and what that split cannot fix;
+- read an open-model announcement critically: what exactly is released, under what terms, and on what hardware it runs.
+
+<Quote
+  who="Dieter Fox"
+  role="senior research director at Ai2 and professor at the University of Washington"
+  source="NVIDIA Announces NVIDIA Isaac GR00T Reference Humanoid Robot for Academic Research, NVIDIA Newsroom"
+  href="https://nvidianews.nvidia.com/news/nvidia-open-humanoid-robot-reference-design"
+  date="31 May 2026"
+>
+  At Ai2, our mission is to accelerate robotics through open science.
+</Quote>
+
+## The mechanism
+
+In the notation of chapter 4, a reactive VLA is a function from the recent observations $o_{<t}$ and the instruction $\ell$ to a chunk of $H$ future actions:
+
+$$
+\boxed{\hat a_{t:t+H} = f_\theta(o_{<t},\ \ell)}
+$$
+
+Read it as: "given what I have just seen and what I was asked, here is what to do for the next $H$ steps." The observation is camera images plus the robot's joint angles. The output is a chunk because, as chapter 4 showed, a model that is slower than the robot's control loop has to hand over several actions at once. And there is no $\hat o$ on the left: a reactive VLA never says what it expects to happen. That single absence is what separates this chapter from the next.
+
+Inside $f_\theta$ are always two parts: a pretrained VLM backbone that reads the images, the instruction and the robot state as one sequence of tokens, and a head that turns what the backbone computed into numbers a motor controller can use. The backbones are ordinary open VLMs: PaLI-X and PaLM-E for RT-2, Llama 2 for OpenVLA, PaliGemma for π0 and π0.5, Gemma 3 for π0.7, and Cosmos-Reason2 for GR00T N1.7 <Cite k="rt-2,openvla,pi0,pi05,pi07,gr00t-n17-isaac-gr00t-repo" />. The heads are where the families differ.
+
+## Three ways to get actions out
+
+### Action tokens
+
+The first VLAs reused the language model's own output. RT-2 and OpenVLA divide each action dimension into 256 bins and treat each bin as a word, so "move the wrist 2 cm left" becomes a short string of tokens the model writes one after another <Cite k="rt-2,openvla" />. The appeal is that nothing in the language model changes. The cost is in the sequence: every token needs its own pass through the decoder, so a chunk of $H$ steps for a robot with $d$ action dimensions needs
+
+$$
+\boxed{\text{sequential passes} = H \times d}
+$$
+
+For one second of a two-armed robot at 50 Hz, that is 50 × 14 = 700 passes, which is why the first token VLAs predicted a single step at a time and ran at a few hertz. RT-2's largest, 55-billion-parameter model ran at 1 to 3 Hz from a cloud service <Cite k="rt-2" />.
+
+Two fixes followed. FAST compresses a chunk before tokenizing it, using the discrete cosine transform also used in JPEG images: smooth motion needs only a few low-frequency coefficients, so the chunk becomes a much shorter token sequence. Its authors report matching diffusion-based VLAs while training up to five times faster, and released FAST+, a tokenizer trained on one million real robot trajectories <Cite k="fast-tokenizer" />. Exercise 5.2 builds the compression step. OpenVLA-OFT went further: it decodes all actions in one parallel pass and switches to continuous outputs, raising OpenVLA's average success on the LIBERO simulation benchmark from 76.5 to 97.1 percent while generating actions 26 times faster <Cite k="openvla-oft" />. At that point the "token" family has quietly moved towards the next one. A 2025 survey of action tokenization maps the full range of options <Cite k="action-tokenization-survey" />.
+
+### An action expert that denoises
+
+The second sub-family keeps the backbone for understanding and adds a separate, smaller network for acting. π0 attached a 300-million-parameter "action expert" to a 3-billion-parameter VLM; the expert reads the backbone's features through attention and produces a whole chunk by flow matching <Cite k="pi0" />. Chapter 4 described flow matching operationally: start from random noise, and move it towards a plausible chunk in $K$ small steps,
+
+$$
+\boxed{A^{\tau + \delta} = A^{\tau} + \delta\, v_\theta(A^{\tau},\ o_t)}
+$$
+
+where $A^\tau$ is the chunk at denoising time $\tau$, $v_\theta$ is the expert's prediction of which way to move it, and $\delta$ is the step size. π0 uses 10 steps <Cite k="pi0" />. The cost is $K$ passes of the small expert, independent of how long the chunk is or how many joints the robot has. That is why this design reached 50 Hz control on dexterous tasks such as laundry folding <Cite k="pi0" />, and why most VLAs released since use it: GR00T N1 and N1.7, SmolVLA, Xiaomi-Robotics-0, π0.5 and π0.7 <Cite k="gr00t-n1,smolvla,xiaomi-robotics-0,pi05,pi07" />. Continuous output also avoids the averaging trap from chapter 4: when a demonstration set contains two good ways to do something, a denoising head can produce either, not their useless mean.
+
+### Two models on two clocks
+
+The third sub-family splits the model in two. Figure's Helix runs a 7-billion-parameter VLM as "System 2" at 7 to 9 Hz, and an 80-million-parameter "System 1" at 200 Hz that turns System 2's latest latent vector and fresh camera images into motor commands <Cite k="figure-helix" />. GR00T N1 uses the same vocabulary: its System 2 VLM runs at 10 Hz on an NVIDIA L40 and its System 1 diffusion transformer produces closed-loop actions at 120 Hz <Cite k="gr00t-n1" />. Gemini Robotics splits along a different line, with a backbone in the cloud and an action decoder on the robot's own computer <Cite k="gemini-robotics" />. Academic versions followed: OpenHelix surveyed and released an open dual-system model <Cite k="openhelix" />, and DuoCore-FS bridges a 1 to 3 Hz VLM and a 25 to 30 Hz action generator through a buffer of latent representations <Cite k="duocore-fs" />.
+
+What crosses the interface matters. In all of these designs it is not a word or a plan but a latent vector: a compressed summary of "what to do" that the fast model can condition on many times before the slow model updates it. Figure 5.2 shows what the split buys and what it does not.
+
+<Figure
+  id="5.2"
+  takeaway="The fast loop decides how well the hand follows a moving object; the slow loop decides how quickly the robot responds to a new instruction. Splitting the model improves the first and leaves the second untouched."
+  caption="Two cups slide back and forth; halfway through, the instruction changes from cup A to cup B. Compare one model at the slow rate with a slow reasoner over a fast controller, then try the published rates."
+  source="rates from Figure AI (Helix), NVIDIA 2025 (arXiv 2503.14734) and Zou et al. 2025 (arXiv 2512.20188); model of the loop in rust/ch05-reactive-vla."
+  toy
+>
+  <DualRate />
+</Figure>
+
+The simulation makes two separate costs visible. With one model at 8 Hz, the hand chases where the cup was when the model last looked, and it is always behind: the tracking error before the switch is around 0.1 table units. Add a 200 Hz controller that re-reads the cup's position every 5 ms, and the error drops about twenty-five-fold. But look at what happens when the instruction changes. The fast controller cannot know which cup to follow until the slow model has looked at the new instruction and thought about it, so the reaction time is set by the slow rate. At 2 Hz the robot keeps confidently tracking the wrong cup for up to a second. Exercise 5.3 measures it.
+
+That is the honest summary of dual-system designs: they make the robot reactive to the world, not to new meaning. A real System 2 can of course be faster or slower than in the toy, and real System 1 models do more than track a point. The structure of the trade-off is what carries over.
+
+## Why it exists
+
+Two things made this family the first to work at scale. The first is transfer: a VLM that already knows objects, spatial words and some common sense brings that knowledge to robot control. RT-2's central result was that co-training on web-scale vision-language data and robot trajectories markedly improved generalization to new objects and to commands absent from the robot data <Cite k="rt-2" />. The second is supervision: teleoperated demonstrations are the cheapest signal that reaches real hardware. They are expensive by web standards, about $118 an hour in early 2026 according to one industry survey<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />, but they are labelled with exactly the actions a VLA needs. Datasets such as Open X-Embodiment pooled them <Cite k="open-x-embodiment" />, and a VLA is the simplest model that can learn from them.
+
+## Representative models
+
+| Model | First released | Sub-family | Notes |
+|---|---|---|---|
+| RT-2 | July 2023 | tokens | up to 55B parameters, PaLI-X backbone <Cite k="rt-2" /> |
+| OpenVLA | June 2024 | tokens | 7B, Llama 2 backbone, trained on 970,000 episodes <Cite k="openvla" /> |
+| π0 | October 2024 | action expert | 3.3B, 50 Hz control <Cite k="pi0" /> |
+| FAST and π0-FAST | January 2025 | tokens, compressed | DCT tokenizer; FAST+ released <Cite k="fast-tokenizer" /> |
+| Helix | February 2025 | fast-slow | 7B over 80M, 7 to 9 Hz over 200 Hz <Cite k="figure-helix" /> |
+| OpenVLA-OFT | February 2025 | parallel decoding | 26× faster action generation than OpenVLA <Cite k="openvla-oft" /> |
+| GR00T N1 | March 2025 | fast-slow, action expert | 2.2B released checkpoint <Cite k="gr00t-n1" /> |
+| Gemini Robotics | March 2025 | fast-slow, cloud and robot | on-device version June 2025 <Cite k="gemini-robotics,gemini-robotics-on-device" /> |
+| π0.5 | April 2025 | action expert | co-training for open-world generalization <Cite k="pi05" /> |
+| SmolVLA | June 2025 | action expert | under 0.5B, trains on one GPU <Cite k="smolvla" /> |
+| Xiaomi-Robotics-0 | February 2026 | action expert | 4.7B, asynchronous execution, open <Cite k="xiaomi-robotics-0" /> |
+| GEN-1 | April 2026 | no VLM backbone (chapter 11) | 99% on simple tasks where earlier models reach 64%<Claim /> <Cite k="gen1" /> |
+| π0.7 | April 2026 | action expert | about 5B, steerable prompt (figure 5.4) <Cite k="pi07" /> |
+| GR00T N1.7 | April 2026 | fast-slow, action expert | 3B, Apache 2.0 <Cite k="gr00t-n17-isaac-gr00t-repo" /> |
+| MolmoAct2 | May 2026 | action reasoning, flow expert | fully open, including datasets <Cite k="molmoact2" /> |
+| LingBot-VLA 2.0 | July 2026 | action expert | about 60,000 hours of pretraining data <Cite k="lingbot-vla-2" /> |
+| GEN-1.5 | August 2026 | no VLM backbone (chapter 11) | 59% one-shot success across 10 tasks<Claim /> <Cite k="gen15" /> |
+
+Two entries show where the family is heading. LingBot-VLA 2.0 adds future prediction as a training-only proxy task, helped by a video representation model for semantics and a depth estimator for geometry <Cite k="lingbot-vla-2" />. That is close to the "video only in training" style of chapter 6's figure 6.2, arriving inside a model its makers still call a VLA. GEN-1.5 reports learning a new task in context from a single 3 to 12 second demonstration, at 59 percent average success across 10 tasks, and 83 percent after 10 gradient steps on five minutes of data<Claim /> <Cite k="gen15" />. The GEN models sit in this table because they are usually compared with VLAs, but they are trained from scratch on their makers' own data rather than on a pretrained VLM; chapter 11 discusses them with the other large behavior models.
+
+## The open ecosystem
+
+No other family has as much released code and weights. LeRobot provides an open library and training stack <Cite k="lerobot" />, NVIDIA publishes GR00T checkpoints with fine-tuning scripts <Cite k="gr00t-n17-isaac-gr00t-repo" />, and Physical Intelligence open-sourced π0 in February 2025 <Cite k="marktechpost-top10-physical-ai-2026" />. "Open" covers very different things, though, and figure 5.3 separates them.
+
+<Figure
+  id="5.3"
+  takeaway="Open models span two orders of magnitude in size, and 'open' ranges from weights alone to weights, data and training code; read the terms, not the headline."
+  caption="VLAs placed by reported parameter count (a rough proxy for the hardware they need) and by how their weights can be obtained. Select a model for what is released, any hardware statement, and the source. Not a ranking."
+  source="each model's paper, repository or announcement as listed per model; π0's release date from MarkTechPost (April 2026); π0.7's status from Humanoid Hub (2026)."
+>
+  <OpenEcosystem />
+</Figure>
+
+Three readings of the figure are worth making explicit. First, open models now cover the whole range from SmolVLA, designed to be deployed on consumer GPUs or even CPUs, to 7-billion-parameter OpenVLA <Cite k="smolvla,openvla" />. Second, "open" is layered. GR00T N1.7's weights are Apache 2.0 and commercially licensable, but the Cosmos-Reason2 backbone it loads is gated behind an access request <Cite k="gr00t-n17-isaac-gr00t-repo" />. MolmoAct2's authors argue that the few open frontier models "release weights alone", and release datasets and recipes as well <Cite k="molmoact2" />. Third, the most capable commercial models sit in the bottom row. Helix, Gemini Robotics and π0.7 are described in posts and papers, not downloadable.
+
+<Callout kind="caveat">
+Rankings of open-weight VLAs disagree from source to source, because they mix benchmarks, robots and fine-tuning budgets. This book gives licence, size, hardware statements and data provenance instead of a ranking. If you need a ranking for a decision, chapter 15 explains how to run a small evaluation of your own.
+</Callout>
+
+## Key paper: steering with the prompt
+
+<Callout kind="key-paper" title="π0.7 (Physical Intelligence, April 2026)">
+π0.7 asks what else a prompt could say. Its prompt carries not only what to do but how: a subtask, generated subgoal images, the episode's speed, a quality score from 1 to 5, whether a segment contains a mistake, and whether to command joints or the end effector <Cite k="pi07" />. Because each slot describes the data it came from, data that would normally be thrown away becomes usable. Slow episodes are labelled slow; failures are labelled as failures. At test time the model is prompted for high speed, high quality and no mistakes, and imitates the corresponding part of what it learned. The authors report following diverse instructions in unseen environments, zero-shot transfer of laundry folding to a robot that never saw the task, and espresso-machine operation that matches specialized RL-fine-tuned models <Cite k="pi07" />. Training drops prompt parts at random, so any subset of the slots can be used at test time.
+</Callout>
+
+<Figure
+  id="5.4"
+  takeaway="Labelling how an episode went, and prompting for the good case, lets a model learn from all of its data while imitating mostly the good part of it."
+  caption="Top: the example prompt printed in the π0.7 paper; select a slot for what it carries. Bottom: a toy of three recipes for data that contains mistakes. Change the share of flawed episodes and the annotators' accuracy."
+  source="prompt and slot definitions from Physical Intelligence 2026 (arXiv 2604.15483), sections C to E; the recipe toy is this book's, in rust/ch05-reactive-vla."
+  toy
+>
+  <PromptAnatomy />
+</Figure>
+
+The toy states the argument in its simplest form. Throwing away flawed episodes gives the same low mistake rate as prompting with "Mistake: false", but it trains on less data. In real models the kept failures still teach something: what the objects look like, how the scene responds to a fumble, how to recover. The toy also shows the dependency nobody can prompt away: when annotators label mistakes inaccurately, the mistakes leak into the "good" part of the data, whatever the recipe.
+
+The π0.7 prompt also blurs this chapter's boundary. Subgoal images are pictures of the future. The WAM survey reads goal-image conditioning as a goal-conditioned world-action model <Cite k="lu2026-wam-survey" />; this book keeps π0.7 here because at inference the model itself does not generate those futures. Chapter 1's family grid calls it a boundary case for that reason.
+
+## What it is good at
+
+**Deployment.** VLAs are the most documented, most packaged family. A team can download a model, fine-tune it on a few hundred demonstrations and run it on a single GPU. One industry survey reports that fine-tuning a pretrained VLA on 200 to 500 demonstrations now beats training a task-specific policy from scratch on more than 1,000<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />.
+
+**Speed.** Chunking, action experts and asynchronous execution make control rates achievable. Real-time chunking generates the next chunk while the current one runs, without retraining <Cite k="real-time-chunking" />, and a 2026 study across accelerators finds that right-sized edge devices can meet control rates at lower cost and energy than flagship GPUs <Cite k="vla-xpu-deployment" />.
+
+**Language and objects.** Instructions about unseen objects and places transfer from the backbone, which is the reason the family exists.
+
+<Callout kind="in-practice">
+The State of Robotics 2026 report counts at least eleven commercial deployments using VLA models as the primary policy by the first quarter of 2026, and reports quantized VLAs running at 10 to 25 Hz on consumer-grade GPUs<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />. In March 2026 NVIDIA named AGIBOT, Humanoid, LG Electronics, NEURA Robotics and Noble Machines as adopting its GR00T N models for industrial humanoid deployments<Claim /> <Cite k="gr00t-n2-preview" />.
+</Callout>
+
+## What it is bad at
+
+**Consequences.** A reactive VLA has no internal model of what its actions will do. It cannot notice that a locally sensible action makes a later step impossible, which is the gap chapter 6 opened with.
+
+**The largest data.** A VLA learns from action-labelled robot data. Internet video and most human video carry no robot actions, so a VLA cannot learn from the two largest layers of chapter 2's data pyramid without extra machinery: latent actions (chapter 7), hand tracking, or the training-time video prediction LingBot-VLA 2.0 now adds <Cite k="lingbot-vla-2" />.
+
+**Composition.** Combining known skills into new sequences was historically weak. π0.7 is among the first to claim strong signs of it <Cite k="pi07" />, a vendor claim that independent evaluation has not yet tested.
+
+**Measured performance.** Success rates on benchmarks say less than they appear to. A 2026 study of state-of-the-art VLAs on the BEHAVIOR-1K household challenge argues that metrics based only on final object states "say little about safety aspects of operation and can potentially exaggerate reported performance", and proposes protocols that count safety violations along the way <Cite k="vla-open-world-eval" />.
+
+## In code
+
+The chapter's crate models the three things this chapter claims: what a head costs, why cosine compression suits smooth motion, and what the fast-slow split buys. The cost model is short enough to read in full.
+
+<RustSnippet file="ch05-reactive-vla/src/lib.rs" region="heads" caption="The three heads and an illustrative cost per pass" />
+
+The loop of figure 5.2 is the same few lines in Rust and in the page's TypeScript: each model reads its inputs at the start of its period and delivers its output one period later.
+
+<RustSnippet file="ch05-reactive-vla/src/lib.rs" region="dual_rate" caption="Two cups, one instruction switch, and a slow and a fast loop" />
+
+## Exercises
+
+The stubs are in `rust/ch05-reactive-vla/src/exercises.rs`.
+
+<Exercise n="5.1" title="What a chunk costs" crate="ch05-reactive-vla" test="ex5_1"
+  hints={["A token head needs one pass per token; how many tokens are in a chunk?", "Denoising passes are paid by the expert, not by the language model's decoder."]}>
+  Implement `sequential_passes` and `chunk_latency_ms` for the three heads. Then compute how many passes a token head would need for a 25-step chunk on a 7-dimensional arm, and explain in one sentence why parallel decoding changed what the token family could do.
+</Exercise>
+
+<Exercise n="5.2" title="FAST in miniature" crate="ch05-reactive-vla" test="ex5_2"
+  hints={["Write the sum directly; the length is small, so an O(n²) transform is fine.", "To compress, zero every coefficient from index keep onwards, then call idct."]}>
+  Implement the orthonormal discrete cosine transform `dct` and `compress`, which keeps only the first coefficients. The tests check that six of fifty coefficients describe a smooth reach almost exactly, and that jittery motion does not compress. What does that predict about using FAST on high-frequency, noisy teleoperation data?
+</Exercise>
+
+<Exercise n="5.3" title="How long does a new instruction take?" crate="ch05-reactive-vla" test="ex5_3"
+  hints={["Walk backwards from the end of the trace while the hand stays within tolerance.", "The reaction time is measured from SWITCH_S, not from zero."]}>
+  Implement `reaction_time`: how long after the instruction switch the hand settles on the new cup. Compare a 2 Hz and an 8 Hz reasoner over the same 200 Hz controller, then use figure 5.2 to check whether a faster controller changes the answer.
+</Exercise>
+
+<NotSure>
+
+**Where the family ends.** The line between a reactive VLA and a world-action model is blurring from both sides. π0.7 conditions on images of the future; LingBot-VLA 2.0 trains with future prediction as a proxy task; Fast-WAM in chapter 6 trains like a WAM and runs like a VLA. This book keeps a model here if it does not generate futures at inference, but that is a convention, not a law.
+
+**Which head wins.** Action experts dominate releases since 2025, but OpenVLA-OFT reports that L1 regression with parallel decoding matches diffusion-based fine-tuning on its benchmarks while training faster <Cite k="openvla-oft" />, and FAST reports token VLAs matching diffusion VLAs <Cite k="fast-tokenizer" />. The comparisons use different robots and data, so the question is open.
+
+**How much the dual-system split matters.** Helix, GR00T and Gemini Robotics all split the model, but no public ablation separates the benefit of the split from the benefit of each company's data and hardware. The toy in figure 5.2 shows the mechanism, not its size on a real robot.
+
+**Vendor numbers.** GEN-1's 99 percent, GEN-1.5's one-shot learning and π0.7's emergent composition are each reported by the model's maker on its own tasks. Until independent evaluations exist, they are claims about a direction, not measurements to compare.
+
+</NotSure>
+
+## Further reading
+
+- π0, the paper that introduced the flow-matching action expert <Cite k="pi0" />.
+- π0.7, for the steerable prompt and what it lets a model learn from <Cite k="pi07" />.
+- OpenVLA-OFT, a careful study of which design choices in a VLA actually matter <Cite k="openvla-oft" />.
+- FAST, for action tokenization done well <Cite k="fast-tokenizer" />.
+- OpenHelix, a short survey and empirical analysis of dual-system VLAs <Cite k="openhelix" />.
+- An anatomy of VLA models, a modules-to-challenges survey with a maintained project page <Cite k="vla-anatomy" />.
+- How VLAs (really) work in open-world environments, for reading benchmark claims critically <Cite k="vla-open-world-eval" />.
+- MolmoAct2, the most open recent release: weights, data and recipes <Cite k="molmoact2" />.

@@ -1,0 +1,50 @@
+/* Chapter page, after the Shannon library article style. */
+.article { min-width: 0; }
+
+.header { --fam: var(--ink); margin-bottom: 2.5rem; }
+.crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; }
+.famChip { display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; padding: 2px 9px; border: 1px solid var(--rule); border-radius: 9999px; color: var(--ink-2); letter-spacing: 0.12em; }
+.famDot { width: 7px; height: 7px; border-radius: 50%; background: var(--fam); }
+
+.h1 { margin: 0; font-size: clamp(1.75rem, 3.2vw, 2.1rem); font-weight: 500; line-height: 1.2; letter-spacing: -0.02em; color: var(--ink); max-width: var(--measure); }
+.purpose { max-width: var(--measure); margin: 0.75rem 0 1.75rem; font-size: 1.2rem; line-height: 1.6; color: var(--ink-3); }
+
+.facts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  margin: 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.facts > div { padding: 16px 14px 16px 0; }
+.facts > div + div { padding-left: 14px; border-left: 1px solid var(--rule); }
+.facts dt { margin-bottom: 6px; }
+.facts dd { margin: 0; font-size: 1.5rem; font-weight: 500; line-height: 1.2; color: var(--ink); letter-spacing: -0.02em; }
+.facts dd.ddSmall { font-size: 1rem; line-height: 1.9; }
+.facts p { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.4; }
+
+.timeline { margin-top: 18px; }
+.timeline :global(.kicker) { margin: 0; }
+
+.body > * { max-width: var(--measure); }
+.body > [data-wide], .body > table { max-width: 100%; }
+.body > h2, .body > h3 { scroll-margin-top: calc(var(--nav-h) + 16px); }
+
+
+.chapterNav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4rem; }
+.chapterNav a {
+  display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--rule); border-radius: 12px;
+  color: var(--ink); font-weight: 500; font-size: 14.5px; line-height: 1.4; text-decoration: none !important;
+  transition: background 0.2s, border-color 0.2s;
+}
+.chapterNav a:hover { background: var(--surface-2); border-color: var(--rule-strong); }
+.chapterNav a span { font-weight: 400; color: var(--ink-3); font-size: 12.5px; }
+.next { text-align: right; }
+
+@media (max-width: 640px) {
+  .facts { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+  .facts > div, .facts > div + div { padding: 12px 12px 12px 0; border-left: 0; }
+  .facts > div:nth-child(n + 3) { border-top: 1px solid var(--rule); }
+  .chapterNav { grid-template-columns: 1fr; }
+}

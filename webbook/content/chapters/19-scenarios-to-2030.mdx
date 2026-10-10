@@ -1,0 +1,147 @@
+import { ScenarioTimelines } from "@/content/ch19/figures";
+import { EvidenceTable } from "@/components/viz/EvidenceTable";
+import { ReleaseChecklist } from "@/components/viz/ReleaseChecklist";
+
+{/* Chapter 19. Brief: Book.md section 4, chapter 19. Last checked 10 October 2026. L0: no equations. */}
+
+<Figure
+  id="19.1"
+  takeaway="Three different futures are each consistent with what has happened so far; they diverge in what they predict for the next three years."
+  caption="Three scenarios on one time axis. Milestones up to October 2026 happened and are cited in earlier chapters; later milestones are what each scenario would predict, not forecasts. Select a milestone."
+  source="past milestones from chapters 5 to 14; future milestones are the authors' construction from Book.md chapter 19."
+  schematic
+>
+  <ScenarioTimelines />
+</Figure>
+
+## Why this chapter exists
+
+A book about a field that changes monthly should not end with a prediction. It should end by giving the reader a way to recognise which future is arriving. This chapter turns the open problems of chapter 17 and the bets of chapter 18 into three scenarios for 2027 to 2030. It names the evidence that would tell them apart, and closes with a checklist for reading the next model release in about ten minutes.
+
+The scenarios are a device for organising uncertainty, not forecasts. Real outcomes will mix them, and the authors do not pick one.
+
+After this chapter you will be able to:
+
+- describe the three scenarios and the evidence that already points towards each;
+- use figure 19.2 to keep score as new results arrive, and say which observations would change your mind;
+- read a launch post or paper with the checklist of figure 19.3: place the model on the family grid, find its data on the pyramid, and flag what its evidence does not show.
+
+<Quote
+  who="Rodney Brooks"
+  role="roboticist, co-founder of iRobot and Rethink Robotics"
+  source="Predictions Scorecard, 2026 January 01"
+  href="https://rodneybrooks.com/predictions-scorecard-2026-january-01/"
+  date="1 January 2026"
+>
+  In the next ten years deployable dexterity may improve markedly, but not in the way the current hype for humanoid robots suggests.
+</Quote>
+
+## Scenario 1: consolidation around reactive VLAs
+
+**The story.** Reactive VLAs absorb the fixes for their weaknesses without changing what they are. Steerable prompts let them learn from failures and select behaviours by description <Cite k="pi07" />. Multi-scale memory carries them through quarter-hour tasks <Cite k="pi-mem" />. RL from deployment makes them faster and more reliable than their demonstrators <Cite k="pi06-star,pi-rl-token" />. Embodied reasoning models above them handle planning and success detection (chapter 10). World-action models stay a research niche for contact-rich tasks, where predicting consequences is worth its cost.
+
+**Why it is plausible.** The family has the largest open ecosystem, the cheapest inference and the longest deployment record (chapters 5 and 15). The March 2026 robustness study found that VLAs such as π0.5 can match world-action models on some tasks when trained extensively on diverse data <Cite k="wam-robustness-study" />.
+
+**What to watch.** Independent real-robot studies at matched data that find no robustness gap between the families. VLA inference staying cheap on edge hardware while video-generating models do not get cheaper.
+
+## Scenario 2: convergence on world-action models
+
+**The story.** Predicting the future becomes a standard part of every deployed policy, mostly through designs that cost little at inference: train with video, act without generating it. The words "VLA" and "WAM" stop meaning different things, because every serious model is trained on both actions and futures.
+
+**Why it is plausible.** The same robustness study found world-action models strong under perturbation, with LingBot-VA at 74.2 percent on RoboTwin 2.0-Plus and Cosmos Policy at 82.2 percent on LIBERO-Plus <Cite k="wam-robustness-study" />. On RoboArena a world-action model led the VLAs it was compared with (chapter 6, figure 6.7)<Claim kind="leaderboard" /> <Cite k="roboarena" />. The cost argument is being dismantled from several sides: Fast-WAM drops generation at test time, Privileged Foresight Distillation keeps the future's benefit without the future, and LingBot-VLA 2.0 adds future prediction to a VLA as a training-only task <Cite k="fast-wam,privileged-foresight-distillation,lingbot-vla-2" />. NVIDIA previewed GR00T N2 as a world-action model for humanoids<Claim /> <Cite k="gr00t-n2-preview" />.
+
+**What to watch.** The robustness advantage replicating outside the labs that reported it. A GR00T N2-class model shipping at control rates on robot hardware. Training with video becoming the default in new releases from the VLA side.
+
+## Scenario 3: resurgence of latent and geometric prediction
+
+**The story.** Generating pixels turns out to be the wrong target for control. Policies predict in learned feature spaces or explicit geometry, pretrain on latent actions from human video, and keep RGB video generators only as simulators and data engines (chapter 8).
+
+**Why it is plausible.** Latent world-action models already run far faster than pixel ones: LaWAM reports up to 24 times lower latency <Cite k="lawam" />. JEPA-style objectives avoid spending capacity on what cannot be predicted <Cite k="vla-jepa,jepa-wam-2608" />. Geometry makes the variables of contact explicit, and touch shows what cameras miss <Cite k="pointworld,vt-wm" />. Even the test-time scaling work on pixel world-action models selects among rollouts using geometric consistency <Cite k="wam-test-time-scaling" />.
+
+**What to watch.** Matched-compute comparisons that favour latent targets over pixel prediction. A shared benchmark for geometry-first models. Latent-action pretraining on human video beating teleoperation-only pretraining in an independent study.
+
+## What would tell them apart
+
+Each scenario makes predictions the others do not. Figure 19.2 lists ten observable results and what each would mean for each scenario. Tick the ones you have seen reported, preferably by someone other than the model's maker, and watch the scores.
+
+<Figure
+  id="19.2"
+  takeaway="No single result settles the question, but a handful of independent results would separate the scenarios clearly; most of them are about evaluation, not new models."
+  caption="Ten observable results, each marked as supporting or undercutting each scenario. Tick the results you have seen; the bars keep score."
+  source="the authors' construction from Book.md chapter 19; the same table and scoring are in rust/ch19-scenarios."
+>
+  <EvidenceTable />
+</Figure>
+
+Two things stand out in the table. Most of the discriminating results are evaluations, not new models: independent replications, matched-compute comparisons, shared benchmarks. Chapter 17 rated evaluation as severe and under-researched, and the scenarios inherit that. The future of the field will be decided partly by who builds the experiments that compare its families fairly. Second, several results move two scenarios at once in opposite directions, which is why one result can reverse the lead. Exercise 19.2 asks what it takes to be ahead.
+
+## How to read the next model release
+
+New models will arrive faster than this book can be revised. The tools of the earlier chapters make a ten-minute reading possible. Figure 19.3 is the worksheet.
+
+<Figure
+  id="19.3"
+  takeaway="Placing a release on the family grid and the data pyramid takes a minute; checking its evidence against ten questions takes ten, and usually raises several flags."
+  caption="The release-reading worksheet: select the release's cell on the family grid, tick the data layers it uses, and answer ten questions about its evidence."
+  source="the authors' checklist, drawing on the family grid (chapter 1), the data pyramid (chapters 2 and 13), the vendor-claim rules of Book.md and the evaluation practice of chapters 11 and 15."
+>
+  <ReleaseChecklist />
+</Figure>
+
+The checklist in words:
+
+1. **Family.** What does it predict: actions only, actions and futures, futures only, or a plan in language? In what space: pixels, learned features, geometry, or tokens? That places it in chapters 5 to 11.
+2. **Data.** Which layers of the pyramid does it learn from, how many hours of each, and are those hours measured the same way (chapter 13)?
+3. **Release.** Are the weights released, under what licence, and does the backbone carry its own terms (chapter 5)?
+4. **Footprint.** How large is it, and what hardware does it need?
+5. **Latency.** What control rate does it reach, on which hardware, synchronous or asynchronous (chapter 15)?
+6. **Evaluation.** Real robots or simulation? Which benchmark, and is it saturated?
+7. **Trials.** How many per condition, with what intervals (chapter 11)?
+8. **Who measured.** The maker, or someone else?
+9. **Claims.** Are numbers about the maker's own data and model presented as claims?
+10. **Comparison and failures.** Are baselines matched for data and compute, and are failure cases shown?
+
+Several flags are normal, and are a reason to wait for evidence rather than to dismiss the model. What the checklist protects against is the commonest mistake in reading this field: treating a maker's demonstration as a measurement.
+
+## In code
+
+The crate's evidence table is the data behind figure 19.2, with the release questions as a struct.
+
+<RustSnippet file="ch19-scenarios/src/lib.rs" region="release" caption="The ten questions of the release checklist" />
+
+## Exercises
+
+The stubs are in `rust/ch19-scenarios/src/exercises.rs`. This chapter is equation-free; the exercises are bookkeeping for judgement.
+
+<Exercise n="19.1" title="Keep score" crate="ch19-scenarios" test="ex19_1"
+  hints={["Skip rows that have not been observed.", "Supports adds one, undercuts subtracts one, neutral does nothing."]}>
+  Implement `tally`. Then pick the two rows you think most likely to be observed by 2028, and say which scenario they would favour together.
+</Exercise>
+
+<Exercise n="19.2" title="Is anything ahead?" crate="ch19-scenarios" test="ex19_2"
+  hints={["Find the highest score, then count how many scenarios have it."]}>
+  Implement `leading`. Then find the smallest set of observations that puts each scenario ahead on its own, and say which set you expect to see first.
+</Exercise>
+
+<Exercise n="19.3" title="Read a release" crate="ch19-scenarios" test="ex19_3"
+  hints={["Check each question in the order given, and add its flag when the answer is no.", "Unstated trial counts count as too few."]}>
+  Implement `red_flags`. Then apply it to the announcement of a model in this book, chapter 5's π0.7 or chapter 10's Gemini Robotics ER 2, and list the flags you find.
+</Exercise>
+
+<NotSure>
+
+**Whether three scenarios are enough.** A fourth is easy to imagine: progress stalls on safety and evaluation, and deployments stay narrow whatever the architecture. The scenarios in this chapter assume the technical race continues; the industrial readiness survey and Brooks' scorecard both suggest that deployment speed may be set by other things <Cite k="industrial-rfm-survey-2026,brooks-predictions-2026" />.
+
+**Whether the scenarios are independent.** They mix easily: a world-action model trained in latent space with a geometry-aware verifier belongs to all three. The table scores them separately because separating them makes evidence easier to read, not because the world will.
+
+**What the authors believe.** The book has tried not to pick a winner. The evidence in October 2026 is thin enough that any confident pick would be a guess, and the field's own history (chapter 3) is full of confident picks that aged badly.
+
+</NotSure>
+
+## Further reading
+
+- The WAM survey's section on open challenges and future directions <Cite k="lu2026-wam-survey" />.
+- The robustness study comparing world-action models and VLAs, the closest thing to a scenario test so far <Cite k="wam-robustness-study" />.
+- Moritz Reuss's view on the second recipe for robot foundation models, quoted in chapter 6 <Cite k="nvidia-blog-rise-of-wams" />.
+- Rodney Brooks' annual predictions scorecard, for how to keep yourself honest about the future <Cite k="brooks-predictions-2026" />.
+- The industrial readiness survey, for what deployment will demand whichever scenario wins <Cite k="industrial-rfm-survey-2026" />.

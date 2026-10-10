@@ -1,0 +1,108 @@
+/* Shared chrome for interactive figures: segmented controls, sliders, readouts. Ink only;
+   family colour appears on the data marks, never on the controls. */
+
+.stack { display: grid; gap: 1rem; font-family: var(--font-ui); }
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--rule);
+  border-radius: 9999px;
+  background: var(--surface-2);
+  width: fit-content;
+  max-width: 100%;
+}
+.segmented button {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.35rem 0.9rem;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.segmented button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.segmented button:hover:not([aria-pressed="true"]) { background: var(--page); color: var(--ink); }
+
+.row { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; }
+
+.button {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 9999px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.button:hover { border-color: var(--accent); color: var(--accent-ink); }
+.button[data-primary="true"] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.button[data-primary="true"]:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.9rem 1.5rem; }
+.slider { display: grid; align-content: start; gap: 0.15rem; font-size: 0.86rem; color: var(--ink-2); }
+.slider[data-disabled="true"] { opacity: 0.45; }
+.sliderHead { display: flex; justify-content: space-between; gap: 0.5rem; }
+.sliderValue { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.slider input[type="range"] { width: 100%; accent-color: var(--accent); }
+.sliderNote { font-size: 0.8rem; color: var(--ink-3); }
+
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 13.5rem; gap: 1.25rem; align-items: start; }
+@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+
+.readout { display: grid; gap: 0; margin: 0; border-top: 1px solid var(--rule-strong); }
+.readout > div { padding: 0.55rem 0; border-bottom: 1px solid var(--rule); }
+.readout dt { font-size: 0.8rem; color: var(--ink-2); }
+.readout dd { margin: 0; font-size: 1.3rem; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.readout dd small { font-size: 0.8rem; font-weight: 400; color: var(--ink-3); display: block; }
+
+.outcome[data-outcome="reached"] { color: var(--ink); }
+.statusIcon { display: inline-block; width: 1.1em; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.84rem; color: var(--ink-2); }
+.legendItem { display: inline-flex; align-items: center; gap: 0.4rem; }
+.swatchLine { width: 1.4rem; height: 0; border-top: 2px solid currentColor; }
+.swatchDash { width: 1.4rem; height: 0; border-top: 2px dashed currentColor; }
+.swatchDot { width: 0.75rem; height: 0.75rem; border-radius: 50%; background: currentColor; }
+
+.note { font-size: 0.88rem; color: var(--ink-2); margin: 0; }
+
+.svg { width: 100%; height: auto; display: block; }
+.svg text { font-family: var(--font-ui); }
+
+.chip {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.chip:hover { border-color: var(--accent); color: var(--accent-ink); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chipDot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--fam-wam); }
+
+.card {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-m);
+  padding: 0.9rem 1.05rem;
+  background: var(--surface-2);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.card h4 { margin: 0 0 0.3rem; font-size: 1rem; font-weight: 600; }
+.card p { margin: 0 0 0.4rem; }
+.cardMeta { color: var(--ink-3); font-size: 0.84rem; }

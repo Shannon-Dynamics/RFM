@@ -1,0 +1,171 @@
+import { ImitationInside } from "@/components/viz/ImitationInside";
+import { TemporalEnsemble } from "@/components/viz/TemporalEnsemble";
+import { TrialsNeeded } from "@/components/viz/TrialsNeeded";
+import { LbmFourComponents } from "@/content/ch11/figures";
+
+{/* Chapter 11. Brief: Book.md section 4, chapter 11. Last checked 9 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="11.1"
+  takeaway="The two workhorses of imitation learning, a denoising action head and action chunks, began in models with no language backbone and now sit inside nearly every other family."
+  caption="Eight models from four families. Switch between the two primitives to see which models use each, and what surrounds it."
+  source="Diffusion Policy (arXiv 2303.04137), ACT (2304.13705), Octo (2405.12213), TRI LBM (2507.05331), π0 (2410.24164), GR00T N1 (2503.14734), DreamZero (chapter 6) and ViPRA (2511.07732); the 'layered stack' reading follows the Robotics Center's 2026 model guide."
+  schematic
+>
+  <ImitationInside />
+</Figure>
+
+## Why this chapter exists
+
+Before vision-language-action models, robot learning had its own workhorses: policies trained by imitation on teleoperated demonstrations, with no language model anywhere. Two of them, Diffusion Policy and ACT, did so well in 2023 that their ideas spread into everything that came after. Figure 11.1 shows where those ideas ended up. π0's action expert generates chunks by flow matching, which its authors describe as a variant of diffusion, and the chunking that every VLA in chapter 5 relies on is ACT's <Cite k="pi0" />.
+
+Large behavior models (LBMs) are what happens when those workhorses are scaled up directly: trained on thousands of hours of robot demonstrations, without the vision-language backbone. Some teams want the data-scaling benefits of a foundation model without a VLM's inference cost or its language interface. This chapter is about that path, about the two primitives everyone borrowed from it, and about the evaluation discipline its most careful study brought with it.
+
+After this chapter you will be able to:
+
+- say what distinguishes a large behavior model from a VLA, and why the distinction is about inputs rather than the action head;
+- explain with figure 11.3 how temporal ensembling trades reaction speed for smoothness;
+- work out with figure 11.4 roughly how many real-robot trials it takes to show that one policy beats another.
+
+<Quote
+  who="TRI LBM Team"
+  role="Toyota Research Institute, authors of A Careful Examination of Large Behavior Models for Multitask Dexterous Manipulation"
+  source="arXiv 2507.05331"
+  href="https://arxiv.org/abs/2507.05331"
+  date="7 July 2025"
+>
+  While these models have garnered significant enthusiasm and investment, meaningful evaluation of real-world performance remains a challenge, limiting both the pace of development and inhibiting a nuanced understanding of current capabilities.
+</Quote>
+
+## The mechanism
+
+A large behavior model is a policy trained by behaviour cloning: given the observation $o_t$, reproduce the chunk of actions $A_t = a_{t:t+H}$ the demonstrator took. Diffusion Policy writes the policy as a denoising process over the action chunk. Training teaches a network $\epsilon_\theta$ to recognise the noise $\epsilon$ that was added to a demonstrated chunk:
+
+$$
+\boxed{\mathcal{L}(\theta) = \big\lVert \epsilon - \epsilon_\theta(o_t,\ A_t + \text{noise}_k,\ k) \big\rVert^2}
+$$
+
+where $k$ is the noise level. At run time the network removes noise step by step, starting from pure noise, which is the operational picture of chapter 4: noise goes in, an action chunk comes out, in $K$ steps <Cite k="diffusion-policy" />. The authors found this formulation handles several valid ways of doing a task gracefully, suits high-dimensional actions, and trains stably, with an average improvement of 46.9 percent over prior methods across 12 tasks <Cite k="diffusion-policy" />. TRI's LBMs use this exact loss with a diffusion transformer that predicts 16 steps of 20-dimensional actions and runs at 10 Hz <Cite k="tri-lbm" />.
+
+What is missing is the pretrained vision-language model. Inputs pass through image encoders, and in TRI's case a CLIP text encoder turns the task description into a feature vector <Cite k="tri-lbm" />. That is language conditioning, but not language understanding in the sense of chapter 5. A CLIP embedding tells the policy which of its trained tasks is meant; it does not let the policy follow an instruction it has never seen.
+
+<Figure
+  id="11.2"
+  takeaway="On the four-component template a large behavior model and a reactive VLA look identical; the difference is what feeds the policy arrow."
+  caption="Chapter 4's template for this family, with a reactive VLA for comparison. Both learn and run the policy only."
+  source="placement from Diffusion Policy (arXiv 2303.04137) and TRI LBM (2507.05331)."
+>
+  <LbmFourComponents />
+</Figure>
+
+## Action chunks, and how to execute them
+
+ACT, introduced with the ALOHA bimanual teleoperation system, made action chunking standard. Its authors report learning six difficult real-world tasks, such as opening a translucent condiment cup and slotting a battery, at 80 to 90 percent success from only 10 minutes of demonstrations <Cite k="act-aloha" />. They also proposed a way to execute chunks smoothly. Query the policy at every step, so that several overlapping chunks each contain a prediction for the current step, and average them:
+
+$$
+\boxed{a_t = \frac{\sum_i w_i\, \hat a_t^{(i)}}{\sum_i w_i}, \qquad w_i = e^{-m\, i}}
+$$
+
+Here $\hat a_t^{(i)}$ is the $i$-th prediction for step $t$, and $w_0$ belongs to the oldest one <Cite k="act-aloha" />. Figure 11.3 compares this temporal ensemble with the two simpler options.
+
+<Figure
+  id="11.3"
+  takeaway="Averaging overlapping chunks gives smooth motion close to the demonstrations; the price is a slower reaction when the world changes."
+  caption="A policy predicts 20-step chunks of a reaching motion, each slightly different, and someone nudges the object at step 150. Compare executing whole chunks, executing only the newest action, and ACT's temporal ensemble; then look inside the ensemble at one step."
+  source="this book's toy, in rust/ch11-behavior; the ensemble rule is ACT's (Zhao et al. 2023, arXiv 2304.13705)."
+  toy
+>
+  <TemporalEnsemble />
+</Figure>
+
+The three ways of executing fail differently. Executing whole chunks open loop drifts within each chunk and reacts to the nudge only at the next chunk boundary. Executing only the newest action reacts at once, but every query commits to a slightly different plan, so the motion jerks: in the toy it is about six times jerkier than the ensemble. The ensemble is smooth and accurate, and it lags after the nudge because predictions made before the nudge still point at the old position. Raising $m$ trusts those old predictions more and makes the lag worse. Real-time chunking and the asynchronous execution of chapters 4 and 5 are later answers to the same problem <Cite k="real-time-chunking" />.
+
+## Scaling up: the large behavior models
+
+**Octo** (May 2024) brought the recipe to a cross-embodiment scale: a transformer policy with a diffusion action head, trained on 800,000 trajectories from Open X-Embodiment, at 27 or 93 million parameters, instructable by language or goal images and fine-tunable on consumer GPUs <Cite k="octo" />. It sits on the boundary with chapter 5: it takes language, through a small encoder, but has no pretrained VLM.
+
+**TRI's Large Behavior Models** (July 2025) are the family's most careful study. TRI trained Diffusion Policy-style models on about 1,700 hours of robot demonstrations, covering more than 500 internally collected tasks plus public data. They evaluated them in 1,800 blind, randomised real-world trials and more than 47,000 simulation rollouts <Cite k="tri-lbm" />. Pretraining made policies more successful and more robust under distribution shift. To match a from-scratch policy in simulation, a fine-tuned LBM needed less than 30 percent of the data, and performance rose predictably with pretraining scale and diversity <Cite k="tri-lbm" />.
+
+**GEN-0** (November 2025) scaled the same bet much further. Generalist AI reports pretraining on more than 270,000 hours of real-world manipulation data, growing by 10,000 hours a week, and a "phase transition" at 7 billion parameters: smaller models stop improving with more data while larger ones keep going<Claim /> <Cite k="gen0" />. Its successor GEN-1 is "trained from scratch" on half a million hours, with a base model that "uses data from low-cost wearable devices on humans" rather than robot data<Claim /> <Cite k="gen1" />. The GEN models are usually compared with VLAs, and chapter 5 lists them for that reason. By this book's test of what feeds the policy, they belong here: there is no pretrained vision-language model underneath.
+
+<Callout kind="key-paper" title="A Careful Examination of Large Behavior Models (TRI, July 2025)">
+The paper's main contribution is its method as much as its models. Policies were compared against single-task baselines in blind A/B trials: the evaluator did not know which policy was running, the order was randomised, and initial conditions were matched. Results were reported with statistical confidence, not as single success rates <Cite k="tri-lbm" />. It is the clearest published template for evaluating a robot foundation model, and the reason figure 11.4 is about statistics. Read it before believing any success rate quoted without an interval.
+</Callout>
+
+## How many trials?
+
+Most robot learning papers report success rates from 10 to 50 real-world trials per condition. Figure 11.4 shows what that can and cannot tell you.
+
+<Figure
+  id="11.4"
+  takeaway="Telling a 70 percent policy from a 60 percent one takes hundreds of trials per policy; with the 20 trials common in papers, the better policy is detected less than one time in five."
+  caption="Two policies with true success rates you choose. Top: typical observed results and their 95% Wilson intervals. Bottom: the chance that a standard test detects that B is better, against the number of trials per policy."
+  source="exact binomial calculations in rust/ch11-behavior; the evaluation practice follows TRI LBM (arXiv 2507.05331)."
+  toy
+>
+  <TrialsNeeded />
+</Figure>
+
+The uncertainty in a success rate is easy to underestimate. Eight successes out of ten has a 95 percent Wilson interval from about 49 to 94 percent:
+
+$$
+\boxed{\frac{\hat p + \frac{z^2}{2n} \pm z\sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}}}{1 + \frac{z^2}{n}}}
+$$
+
+where $\hat p$ is the observed rate, $n$ the number of trials, and $z = 1.96$ for 95 percent. The arithmetic of comparison is harsher. With 20 trials of each policy, a real 10-point difference between 60 and 70 percent is detected about 16 percent of the time; reaching the conventional 80 percent chance takes about 280 trials of each. A 20-point difference, 40 against 60 percent, needs about 80. This is why TRI's 1,800 real-world trials matter, and why chapter 15 treats evaluation as an engineering problem in its own right. Exercises 11.2 and 11.3 compute these numbers.
+
+## Why it exists, good at, bad at
+
+**Why it exists.** Some teams want the data-scaling benefits without a VLM's inference cost or language interface, and the imitation-learning primitives became the action heads inside every other family anyway.
+
+**What it is good at.** LBMs are small, fast and well understood: Octo's larger model has 93 million parameters <Cite k="octo" />, against billions for a VLA. Pretrained broadly, they are robust under distribution shift <Cite k="tri-lbm" />. And they remain the workhorse of bimanual teleoperation research, where a few hours of demonstrations and an afternoon of training produce a working policy.
+
+**What it is bad at.** No web knowledge, and at most a narrow form of language grounding. The task is specified by demonstration: to teach a new behaviour, you show it. That rules out the "do something you have never seen, described in words" generalisation that is the point of chapter 5.
+
+<Callout kind="in-practice">
+The Robotics Center's 2026 guide to robot models describes the result as a layered stack. In its account, Diffusion Policy's action head now lives inside Octo, and ACT's chunking and ensembling are standard across the field. The clean split between "research imitation learning" and "deployment VLA" has blurred, and the differentiator is the quality and coverage of a team's own teleoperation data <Cite k="robotics-center-best-vla-2026" />. LeRobot packages these policies alongside VLAs in one open library, which is how many teams meet them first <Cite k="lerobot" />.
+</Callout>
+
+## In code
+
+The chunk model behind figure 11.2 is a policy whose every query commits to a slightly different plan, plus the two simple ways of executing it.
+
+<RustSnippet file="ch11-behavior/src/lib.rs" region="chunks" caption="A chunking policy, open-loop and newest-action execution, and the two metrics" />
+
+## Exercises
+
+The stubs are in `rust/ch11-behavior/src/exercises.rs`.
+
+<Exercise n="11.1" title="Temporal ensembling" crate="ch11-behavior" test="ex11_1"
+  hints={["Keep one buffer per future step; each query appends its prediction to the buffers it covers.", "Weights are exp(−m·i) with i = 0 for the oldest entry in the buffer."]}>
+  Implement `run_ensemble`. The tests check that it is smoother than re-planning every step and more accurate than open-loop chunks. Then explain why a very large m makes the ensemble behave like executing old chunks, and what that does after the nudge.
+</Exercise>
+
+<Exercise n="11.2" title="An honest error bar" crate="ch11-behavior" test="ex11_2"
+  hints={["Use the formula in the chapter; clamp the result to [0, 1].", "With zero trials, the honest answer is the whole interval."]}>
+  Implement `wilson`. Then take three success rates quoted in this book's chapters 5 to 10 that report a trial count, and compute their intervals.
+</Exercise>
+
+<Exercise n="11.3" title="How many trials?" crate="ch11-behavior" test="ex11_3"
+  hints={["Sum the probabilities of every pair of outcomes (successes of A, successes of B) for which the test statistic exceeds the critical value.", "Each outcome's probability is the product of two binomial probabilities."]}>
+  Implement `power`. Use it to find how many trials per policy you would need to detect a 5-point improvement from 85 to 90 percent, and say what that implies for papers that report a few points of gain from 50 real-world trials.
+</Exercise>
+
+<NotSure>
+
+**Where the family ends.** The boundary with chapter 5 is porous. Octo takes language through a small encoder; GEN-1 describes its architecture as building on the strengths of vision and language models without starting from one. This book keeps LBMs separate because the absence of a pretrained language backbone changes what data they can use and what instructions they can follow, but some models can be argued either way.
+
+**Whether scale replaces the VLM.** GEN-0 and GEN-1 are the strongest bet that robot and human-activity data at sufficient scale can do without web pretraining. The evidence is the makers' own, on their own tasks, so the question is open.
+
+**How much the primitives matter now.** Diffusion heads, flow matching and L1 regression all appear in the same model families, and OpenVLA-OFT reports regression matching diffusion in its setting (chapter 5). Which head is best may depend more on data than on the head.
+
+</NotSure>
+
+## Further reading
+
+- Diffusion Policy, the paper that made generative action heads standard <Cite k="diffusion-policy" />.
+- ACT and ALOHA, for chunking, temporal ensembling and low-cost bimanual teleoperation <Cite k="act-aloha" />.
+- Octo, an open generalist policy with a diffusion head <Cite k="octo" />.
+- TRI's careful examination of LBMs, for evaluation with statistical confidence <Cite k="tri-lbm" />.
+- GEN-0, read as a vendor report, for the case for scale without a VLM <Cite k="gen0" />.
+- LeRobot, for an open library that implements most of these policies <Cite k="lerobot" />.

@@ -1,0 +1,167 @@
+import { PhaseTimeline } from "@/content/ch03/figures";
+import { LineageTree } from "@/components/viz/LineageTree";
+
+{/* Chapter 3. Brief: Book.md section 4, chapter 3. Last checked 3 October 2026. L0: no equations. */}
+
+<Figure
+  id="3.1"
+  takeaway="Each phase answered the limitation of the one before it, and the gaps between them keep shrinking."
+  caption="Milestones from 2018 to September 2026, one lane per phase, coloured by the family each belongs to (grey: no single family). Select a milestone for what it introduced."
+  source="dates are first arXiv versions or announcements, from each source in reference/. Phase 1 has no dated milestones in this book's sources."
+>
+  <PhaseTimeline />
+</Figure>
+
+## Why this chapter exists
+
+A newcomer to robot foundation models meets a wall of names: RT-2, Octo, π0.5, GR00T, DreamZero. Read in isolation they look like a list of products. Read in order they are an argument, each generation fixing what the previous one could not do and breaking something it took for granted. This chapter gives the order, so that every later chapter reads as an answer to a question the field was already asking.
+
+After this chapter you will be able to:
+
+- tell the history of robot foundation models in five phases, and say what each fixed and what it broke;
+- trace any current model back through the lineage of figure 3.3, distinguishing a team's next version from an idea borrowed from elsewhere;
+- move between this book's phases and the five research phases of the 2026 comprehensive review.
+
+<Quote
+  who="Rodney Brooks"
+  role="roboticist, co-founder of iRobot and Rethink Robotics"
+  source="Predictions Scorecard, 2026 January 01"
+  href="https://rodneybrooks.com/predictions-scorecard-2026-january-01/"
+  date="1 January 2026"
+>
+  Those speeds are very different and driven by very different realities. I think that many people get confused by that and make the mistake of jumping between those domains of reality, thinking all the speeds will be the same.
+</Quote>
+
+Brooks is writing about the speed of research ideas, of hype, and of deployment. Keep his distinction in mind: this chapter is a history of ideas, and chapter 16 is where deployment gets its own, slower, timeline.
+
+## Phase 1: modular pipelines (before 2017)
+
+Classical robots were built from separate blocks: perception, state estimation, planning and control. Each block could be designed, validated and replaced on its own, and the representations between them could be inspected, which made the whole debuggable and, for industrial cells, certifiable <Cite k="lu2026-wam-survey" />.
+
+The approach works when the task, the dynamics and the environment can be specified precisely. It breaks in the open world. Hand-designed representations are brittle when conditions shift, an error at one block's interface propagates through the rest, and a model built for one task does not scale across scenes, robot bodies and instructions <Cite k="lu2026-wam-survey" />. Everything that follows trades some of the modular pipeline's transparency for learning's breadth. Chapter 15 counts what was given up.
+
+## Phase 2: learning in the lab (2017 to 2023)
+
+Two lines of learning research matured in parallel, both mostly in simulation and in single labs.
+
+The first learned **world models** for control. PlaNet learned the dynamics of an environment from pixels and planned in a compact latent space <Cite k="planet" />. Dreamer learned behaviours purely by imagining trajectories inside such a model <Cite k="dreamer" />. TD-MPC paired short-horizon planning in a learned latent model with a learned value for the long run <Cite k="td-mpc" />. DreamerV3 made the recipe general: one configuration across more than 150 tasks, and the first algorithm to collect diamonds in Minecraft from scratch <Cite k="dreamerv3" />.
+
+The second made **imitation** work on real robots. Diffusion Policy represented a robot's policy as a conditional denoising process, which let it capture the several valid ways of doing a task instead of averaging them <Cite k="diffusion-policy" />. ACT predicted chunks of future actions with a transformer and learned fine bimanual skills on low-cost hardware <Cite k="act-aloha" />. Chapter 4 explains both mechanisms; chapter 11 follows their descendants.
+
+**What it fixed:** learning replaced hand design, and both lines worked on real problems. **What it broke:** each model was trained for one task or one robot, from data collected for it. Nothing transferred, and nothing understood an instruction.
+
+## Phase 3: language and vision enter (2022 to 2024)
+
+The third phase borrowed understanding from models trained on the web.
+
+RT-1 trained a robotics transformer on large, diverse real-world robot data and showed it absorbing that diversity as the model grew <Cite k="rt-1" />. RT-2 then took the step that named the field: it wrote robot actions as text tokens, so a vision-language model pretrained on the internet could be co-fine-tuned to output them, and web knowledge transferred to a robot arm <Cite k="rt-2" />. RoboFlamingo showed that an open vision-language model, lightly fine-tuned, made an effective imitator <Cite k="roboflamingo" />.
+
+Data was pooled in the same years. Open X-Embodiment gathered over a million trajectories from 22 robot types <Cite k="open-x-embodiment" />, and two open generalist policies were trained on it: Octo, on 800,000 of those trajectories <Cite k="octo" />, and OpenVLA, a 7-billion-parameter vision-language-action model trained on 970,000 demonstrations <Cite k="openvla" />.
+
+**What it fixed:** robots could follow instructions about objects they had never been trained on, and the weights were open. **What it broke:** speed and precision. A large model emitting one discretised action token at a time was slow and coarse, which is what the next phase set out to solve.
+
+## Phase 4: generalist policies as products (2024 to 2025)
+
+In the fourth phase companies began to sell the result.
+
+Covariant announced RFM-1 in March 2024, an 8-billion-parameter model trained on text, images, video, robot actions and physical measurements, built on tens of millions of trajectories from its warehouse fleet<Claim /> <Cite k="covariant-rfm1" />. Five months later Amazon licensed the technology and hired Covariant's founders <Cite k="covariant-rfm1" />, an early sign of what such models were worth.
+
+Physical Intelligence's π0 added a flow-matching action expert to a pretrained vision-language model and trained it across many robot types, replacing slow discrete tokens with fast continuous action chunks <Cite k="pi0" />. Figure's Helix split the work by speed for humanoids: a vision-language model running at 7 to 9 Hz for understanding, above a 200 Hz policy for control <Cite k="figure-helix" />. NVIDIA released GR00T N1 as an open dual-system foundation model for humanoids <Cite k="gr00t-n1" />, and Google DeepMind launched Gemini Robotics, with physical actions as a new output of Gemini 2.0, alongside an embodied-reasoning model <Cite k="gemini-robotics" />. π0.5 extended π0 to open-world generalisation <Cite k="pi05" />, π*0.6 learned from its own experience with reinforcement learning <Cite k="pi06-star" />, and Generalist AI's GEN-0 reported scaling laws from over 270,000 hours of real-world manipulation data<Claim /> <Cite k="gen0" />.
+
+**What it fixed:** speed, dexterity and breadth, in products that customers could buy. **What it broke:** these models are reactive. They map what they see to what they do and do not model what happens next, which is where the fifth phase starts.
+
+## Phase 5: the world-action turn (2026)
+
+In 2026 prediction of consequences moved into the policy. Cosmos Policy fine-tuned a video model to act and plan <Cite k="cosmos-policy" />; LingBot-VA learned frame prediction and action together <Cite k="lingbot-va" />; DreamZero denoised video and actions in one 14-billion-parameter model <Cite k="dreamzero" />; Fast-WAM asked whether the imagined video is needed at test time at all <Cite k="fast-wam" />. NVIDIA previewed GR00T N2 in March as based on DreamZero <Cite k="gr00t-n2-preview" />. The reactive line kept moving too: π0.7 became steerable through goal images, metadata and language <Cite k="pi07" />. By September a survey named the family and mapped it <Cite k="lu2026-wam-survey" />. Chapter 6 tells this phase in full.
+
+**What it fixed:** reasoning about consequences, and learning from video without action labels. **What it broke, so far:** inference cost, and the simplicity of a model that only maps images to actions. Whether those are temporary is chapter 6's open question.
+
+## What each phase fixed and what it broke
+
+<Figure
+  id="3.2"
+  takeaway="Every phase paid for its gain with something the previous phase had."
+  caption="The five phases in one table: the limitation each one answered, and the new limitation it created."
+  source="this chapter."
+>
+
+| Phase | Fixed | Broke |
+|---|---|---|
+| 1. Modular pipelines | Transparent, certifiable, debuggable systems | Brittle outside the conditions they were designed for |
+| 2. Learning in the lab | Behaviour learned rather than hand-designed | One model per task and per robot; no language |
+| 3. Language and vision enter | Instructions and web knowledge transfer to robots; open weights | Slow, coarse discretised actions |
+| 4. Policies as products | Fast continuous control, dexterity, breadth; commercial use | Reactive: no model of consequences |
+| 5. The world-action turn | Predicting consequences; learning from action-free video | Inference cost; harder to inspect and certify |
+
+</Figure>
+
+## The lineage
+
+Figure 3.3 draws the same history as a family tree. Solid arrows join a team's versions; dashed arrows mark a model that builds on another's backbone, recipe or central idea. Select any model to light up everything it descends from. π0.7, for example, descends in a direct line from π*0.6, π0.5 and π0, and through π0 from ACT's chunking and Diffusion Policy's denoising.
+
+<Figure
+  id="3.3"
+  takeaway="Today's models are recombinations: a few lines of descent, crossed by borrowed backbones and ideas."
+  caption="Twenty-eight models from 2018 to 2026 placed by release date, one row per line of work. Solid: next version from the same team. Dashed: builds on another's backbone, recipe or central idea. Select a model to highlight its ancestors."
+  source="dates from each source in reference/; edges are this book's reading of each paper's own account of what it builds on."
+>
+  <LineageTree />
+</Figure>
+
+The dashed edges are judgments, and one deserves a warning. DreamZero builds on Wan's video model directly; the edge from DreamerV3 records only that both belong to the world-model thread the WAM survey traces, not that DreamZero reuses Dreamer's code <Cite k="lu2026-wam-survey" />.
+
+The chapter's Rust crate stores the lineage as a small graph, which makes such judgments checkable:
+
+<RustSnippet file="ch03-lineage/src/lib.rs" region="graph" caption="Models, links and the lineage" />
+
+Writing that graph caught a real inconsistency, which exercise 3.2 asks you to reproduce. The first draft drew GR00T N2 as the successor of GR00T N1.7. But N2 was previewed in March 2026, a month before N1.7 shipped in April <Cite k="gr00t-n2-preview,gr00t-n17-isaac-gr00t-repo" />. A model cannot descend from one released after it, so the graph now draws both as successors of N1.
+
+## This book's phases and the review's
+
+The 2026 comprehensive review also tells the history in five phases <Cite k="psiris2026-fm-robotics-review" />. Its boundaries follow three axes: the main source of training data, how integrated the system is, and what the model outputs. This book keeps the idea of five phases but draws them around a different question, what each generation fixed and broke, and names them in its own words. The two readings line up like this:
+
+| Review's phase | Years | Closest phase in this book |
+|---|---|---|
+| 1. Native language and vision models in robotic systems | 2018 to 2021 | 1 and 2: perception models inside modular pipelines; learning in the lab |
+| 2. Grounded planning with vision-language representations | 2021 to 2022 | 3, early part |
+| 3. Embodied vision-language-action policies | 2022 to 2023 | 3 |
+| 4. Memory, autonomous task composition, web-to-robot transfer | 2023 to 2024 | 3 and 4 |
+| 5. Multi-sensory generalisation and real-world deployment | 2024 to present | 4 and 5 |
+
+The main difference is the last row. The review's fifth phase runs to the present; this book separates 2026 as the world-action turn, because prediction of consequences entering the policy changes what the model is, not only where it is deployed.
+
+## Exercises
+
+The stubs are in `rust/ch03-lineage/src/exercises.rs`.
+
+<Exercise n="3.1" title="Where did it come from?" crate="ch03-lineage" test="ex3_1"
+  hints={["Walk backwards over edges from the model, keeping a set of models already found.", "Both kinds of link count as descent."]}>
+  Implement `ancestors`: every model a given model descends from, through any chain of edges. Then compare your answer for GR00T N2 with figure 3.3.
+</Exercise>
+
+<Exercise n="3.2" title="Nothing descends from the future" crate="ch03-lineage" test="ex3_2"
+  hints={["Look up both ends of every edge; an edge whose end is missing is inconsistent too."]}>
+  Implement `inconsistent_edges`: edges that point to an earlier model or name a model not in the list. Add the edge the first draft had, from GR00T N1.7 to GR00T N2, and confirm your function catches it.
+</Exercise>
+
+<Exercise n="3.3" title="The longest family line" crate="ch03-lineage" test="ex3_3">
+  Implement `longest_successor_chain`, the length of the longest chain of same-team versions. Which line is it, and what does that say about how long a single lab has stayed at the front?
+</Exercise>
+
+<NotSure>
+
+**Where the phase boundaries fall.** They are this book's editorial choice, and real work overlaps: Diffusion Policy and ACT belong to the lab phase in spirit and to 2023 in date, the same year RT-2 opened the next phase. The review draws its boundaries differently, for stated reasons, and neither is the history.
+
+**Who was first.** Several firsts are contested. NVIDIA called GR00T N1 the world's first open humanoid robot foundation model; Figure called Helix the first VLA to control a whole humanoid upper body at high rate; Covariant called RFM-1 the first time generative AI gave commercial robots a deeper understanding of language and the physical world. This book reports each claim and its claimant rather than adjudicating <Cite k="nvidia-pr-gr00t-n1,figure-helix,covariant-rfm1" />.
+
+**Whether the fifth phase is a phase.** The world-action turn is less than a year old. If chapter 6's open question resolves toward "video only in training", 2026 may read in retrospect as a change in training recipe rather than in what a robot model is.
+
+</NotSure>
+
+## Further reading
+
+- The 2026 comprehensive review's history and its five research phases <Cite k="psiris2026-fm-robotics-review" />.
+- RT-2, the paper that named vision-language-action models <Cite k="rt-2" />.
+- DreamerV3, the most general statement of the world-model thread <Cite k="dreamerv3" />.
+- π0, the template for the policies of phase 4 <Cite k="pi0" />.
+- A 2025 anatomy of vision-language-action models, from modules to milestones <Cite k="vla-anatomy" />.

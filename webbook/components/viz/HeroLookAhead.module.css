@@ -1,0 +1,10 @@
+.card { margin: 0; overflow: hidden; border: 1px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); }
+.svg { display: block; width: 100%; height: auto; }
+.bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 12px;
+  border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 11px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.eyebrow { letter-spacing: 0.16em; margin-right: 6px; }
+.bar button { border: 0; background: transparent; color: var(--accent-ink); font: inherit; text-transform: none; letter-spacing: 0; font-family: var(--font-body); font-size: 12px; font-weight: 500; cursor: pointer; }
+.bar button:hover { text-decoration: underline; }

@@ -1,0 +1,152 @@
+import { ReasoningStack } from "@/components/viz/ReasoningStack";
+import { SuccessLoop } from "@/components/viz/SuccessLoop";
+import { ReasoningTimeline } from "@/content/ch10/figures";
+
+{/* Chapter 10. Brief: Book.md section 4, chapter 10. Last checked 9 October 2026. L0: no equations. */}
+
+<Figure
+  id="10.1"
+  takeaway="An embodied reasoning model does not move the robot; it decides what the controller should do next and whether it worked, and the three ways of wiring it in differ in what crosses between thinking and acting."
+  caption="Three places to put the reasoning: a separate model over controllers, a reasoning backbone inside a VLA, or one model that thinks and then acts. Choose an arrangement and watch a four-step task."
+  source="Gemini Robotics ER 2 announcement (Google, 30 July 2026); NVIDIA Isaac-GR00T repository (GR00T N1.7); π0.5 (arXiv 2504.16054); Gemini Robotics 1.5 (2510.03342); MolmoAct2 (2605.02881)."
+  schematic
+>
+  <ReasoningStack />
+</Figure>
+
+## Why this chapter exists
+
+Every family so far ends in motor commands. This one does not. An embodied reasoning model is a vision-language model trained to understand space, plan multi-step tasks and judge progress, which then hands the motion to a controller from one of the other families. It is the part of the robot that knows the cup is behind the kettle, that "tidy the desk" means four separate pickups, and, above all, that the third pickup failed and needs another try.
+
+That last ability matters more than it sounds. A controller that has tried a step has no reliable way of knowing whether it succeeded, so it either moves on regardless or never moves on at all. A reasoning model that can look at the scene and say "done" or "not yet" is what turns a sequence of attempts into a task. Google DeepMind's announcement of Gemini Robotics-ER 1.6 calls success detection "a cornerstone of autonomy" <Cite k="gemini-robotics-er16" />.
+
+After this chapter you will be able to:
+
+- name the four jobs an embodied reasoning model does, and say which of them a controller cannot do for itself;
+- explain with figure 10.2 why a judge that is right most of the time still matters enormously over a ten-step task, and why an optimistic judge is worse than a cautious one;
+- read an embodied reasoning announcement critically, knowing that almost all evidence so far comes from the model makers.
+
+<Quote
+  who="Laura Graesser and Peng Xu"
+  role="Google DeepMind, authors of the Gemini Robotics-ER 1.6 announcement"
+  source="Gemini Robotics-ER 1.6: Powering real-world robotics tasks through enhanced embodied reasoning, Google DeepMind blog"
+  href="https://deepmind.google/blog/gemini-robotics-er-1-6/"
+  date="14 April 2026"
+>
+  In robotics, knowing when a task is finished is just as important as knowing how to start it.
+</Quote>
+
+## Four jobs
+
+**Spatial understanding.** Where things are, how many there are, which is the smallest, where to grasp. The Gemini Robotics-ER models express much of this by pointing: returning image coordinates for "every object small enough to fit inside the blue cup". Pointing also serves as an intermediate step for counting and for metric estimates <Cite k="gemini-robotics-er16" />. The first Gemini Robotics-ER, introduced alongside Gemini Robotics in March 2025, already covered object detection, pointing, trajectories and grasps <Cite k="gemini-robotics" />.
+
+**Task decomposition.** Turning "put the fruit in the bowl" into a sequence of steps a controller can execute, and changing the plan when something unexpected happens.
+
+**Progress and success detection.** Watching the scene and deciding whether the current step is done. Gemini Robotics ER 2 classifies each video frame into five levels of progress, from 0-20 percent to 80-100 percent, so the robot can "retry failed steps without restarting an entire workflow" <Cite k="gemini-robotics-er2" />. Multiple cameras make this harder and more useful: ER 1.6's main advance was reasoning across an overhead and a wrist-mounted view at once <Cite k="gemini-robotics-er16" />.
+
+**Orchestration.** Calling the tools that do the work. ER 2 treats VLAs, navigation APIs, Google Search and any user-defined function as tools, and streams video, audio or text through a low-latency endpoint so it can "think" about the next step while the robot is still acting <Cite k="gemini-robotics-er2" />.
+
+None of the four is motor control. That is the defining line of the family, and the reason it sits on its own in the book's family grid: what it predicts is a plan in language, not an action.
+
+## Where the reasoning sits
+
+Figure 10.1 shows three ways to connect reasoning to motion, and they are converging.
+
+**A separate reasoner over controllers.** The cleanest split. The reasoning model runs in the cloud or on a large onboard computer, sends subgoals in words to whatever controller fits the step, and watches the result. Gemini Robotics ER 2, which became publicly available to developers through the Gemini API on 30 July 2026, is designed for exactly this <Cite k="gemini-robotics-er2" />. The advantage is that the reasoner is embodiment-agnostic: the same model can orchestrate a robot arm's VLA, a quadruped's navigation API and a search engine.
+
+**Reasoning inside the VLA.** The reasoning model becomes the VLA's backbone. NVIDIA's Cosmos-Reason models were trained for physical common sense and embodied decisions <Cite k="cosmos-reason1" />, and GR00T N1.7 builds its 3-billion-parameter VLA on Cosmos-Reason2-2B <Cite k="gr00t-n17-isaac-gr00t-repo" />. π0.5 goes a step further and predicts a semantic subtask before the actions for it, within one model <Cite k="pi05" />. Nothing readable crosses between thinking and acting, which is faster and harder to inspect.
+
+**Think, then act.** One model writes its reasoning out and then acts. Gemini Robotics 1.5 "interleaves actions with a multi-level internal reasoning process in natural language" <Cite k="gemini-robotics-15-er15" />, and MolmoAct2 is built as an action reasoning model on a backbone specialised for embodied reasoning <Cite k="molmoact2" />. The reasoning is readable, which helps debugging, and every thought costs time.
+
+<Callout kind="key-paper" title="Gemini Robotics 1.5 (Google DeepMind, October 2025)">
+The Gemini Robotics 1.5 report introduces two models that are meant to be used together: Gemini Robotics 1.5, a VLA that thinks in language before acting and transfers motions across embodiments, and Gemini Robotics-ER 1.5, an embodied reasoning model the report describes as state of the art for "visual and spatial understanding, task planning, and progress estimation" <Cite k="gemini-robotics-15-er15" />. Read together, they show the division of labour this chapter describes: the ER model orchestrates and judges, the VLA moves. Most of the report's numbers are on Google's own benchmarks and robots.
+</Callout>
+
+## Why success detection matters so much
+
+The value of a judge is easiest to see in a long task. Figure 10.2 runs one: a controller that completes each step on 70 percent of attempts, a judge that looks after every attempt, and up to three attempts before the robot stops and asks for help.
+
+<Figure
+  id="10.2"
+  takeaway="Over a long task, a judge that catches failures turns a near-certain failure into a likely success; a judge that is too ready to say 'done' gives most of that back as failures nobody notices."
+  caption="The success-detection loop as a state machine: act, observe, judge, then move on, retry or ask for help. Run a sampled ten-step task, and change how good the controller and the judge are; the bars compare the exact outcomes with a robot that never checks."
+  source="this book's toy, in rust/ch10-reasoning; the loop follows the Gemini Robotics-ER 1.6 and ER 2 announcements (Google DeepMind, April and July 2026)."
+  toy
+>
+  <SuccessLoop />
+</Figure>
+
+The numbers are stark. A robot that never checks, and simply moves on after one try, completes a ten-step task about 3 percent of the time, and in the other 97 percent it fails without knowing. With a judge that wrongly says "done" 5 percent of the time and wrongly says "not done" 10 percent of the time, the same controller completes the task about 59 percent of the time, asks for help 27 percent of the time, and fails silently 14 percent of the time.
+
+The two kinds of judging error are not equally bad. Raise the chance of a hallucinated success to 30 percent and silent failures jump to about 61 percent: the robot reports a tidy desk that is not tidy. Raise the chance of a wrong retry to 40 percent instead and silent failures stay low, but the robot asks for help on most tasks and spends more attempts per step. A robot that asks too often is annoying. A robot that is confidently wrong is dangerous, and that asymmetry is the strongest argument for evaluating embodied reasoning models on false successes specifically. Exercises 10.1 to 10.3 compute these numbers exactly.
+
+## Representative models
+
+<Figure
+  id="10.3"
+  takeaway="The family moved from research reports to public developer APIs in about eighteen months; the independent checks started arriving only in 2026."
+  caption="Embodied reasoning models, controllers with reasoning built in, and the first independent evaluations, 2025 to 2026. Select a milestone for what it introduced."
+  source="each model's report or announcement as cited in this chapter; RoboReward (arXiv 2601.00675); BeTTER (2604.18000). Capabilities as stated by the makers."
+>
+  <ReasoningTimeline />
+</Figure>
+
+## Why it exists, good at, bad at
+
+**Why it exists.** Knowing when a task is finished is what lets a robot decide whether to retry or move on, and controllers are poor at it by themselves. Long-horizon tasks also need planning that a reactive controller does not do.
+
+**What it is good at.** It reuses frontier VLM capability directly, so it improves whenever the underlying VLM improves. It is fast to iterate on, because changing a prompt or a tool list needs no robot data. And it is largely embodiment-agnostic: the same reasoning model can sit above very different robots.
+
+**What it is bad at.** Latency and, for the largest models, dependence on the cloud: ER 2's low-latency streaming endpoint exists because "high-level reasoning depends on execution speed" <Cite k="gemini-robotics-er2" />. It has no direct control, so it is only as good as the controllers it calls. And its failure modes are those of the underlying VLM: hallucinated success, brittle counting, misreading a cluttered scene.
+
+<Callout kind="in-practice">
+The clearest deployments so far are inspection and fetching. Gemini Robotics-ER 1.6's instrument reading, which reads pressure gauges and sight glasses, came out of work with Boston Dynamics on facility inspection with Spot<Claim /> <Cite k="gemini-robotics-er16" />. ER 2's launch demonstrated Spot fetching objects by orchestrating its navigation and manipulator APIs, and collaboration between Apptronik's Apollo 2 humanoid and a Franka mobile manipulator<Claim /> <Cite k="gemini-robotics-er2" />. The ER 2 model card itself asks users not to use the robotics models for safety-critical applications such as healthcare or transportation <Cite k="gemini-robotics-er2" />.
+</Callout>
+
+<Callout kind="caveat">
+Almost everything known about the frontier embodied reasoning models comes from their makers' blogs, model cards and reports. Independent evaluation is thin and recent. RoboReward, a January 2026 benchmark of VLMs as judges of real robot episodes, found that "no model excels across tasks", and that purpose-trained 4B and 8B models beat much larger general VLMs on short-horizon tasks <Cite k="roboreward" />. BeTTER, from April 2026, found that state-of-the-art VLAs "catastrophically fail in dynamic scenarios" once layouts shift or tasks require temporal extrapolation, and argued that static benchmarks hide it <Cite k="better-embodied-reasoning" />.
+</Callout>
+
+## In code
+
+The crate's loop is the state machine of figure 10.2, with a reproducible random generator so traces can be compared.
+
+<RustSnippet file="ch10-reasoning/src/lib.rs" region="loop" caption="A judge, an attempt, and one step of the success-detection loop" />
+
+## Exercises
+
+The stubs are in `rust/ch10-reasoning/src/exercises.rs`. This chapter is equation-free; the exercises ask for probabilities, which you can compute by following the state machine one attempt at a time.
+
+<Exercise n="10.1" title="One step, exactly" crate="ch10-reasoning" test="ex10_1"
+  hints={["Keep two numbers: the chance the step is done and the judge has not yet stopped, and the chance it is not done and the judge has not yet stopped.", "After each attempt, move some of the not-done chance to done, then let the judge stop part of each."]}>
+  Implement `step_outcomes`, the exact chances that a step ends done, silently failed, or with a request for help. The test compares your answer with 200,000 sampled steps. Then find the attempts limit beyond which more attempts stop helping, for the default judge.
+</Exercise>
+
+<Exercise n="10.2" title="A whole task" crate="ch10-reasoning" test="ex10_2"
+  hints={["A task completes only if every step completes.", "The robot stops at the first request for help, so later steps never run."]}>
+  Implement `task_outcomes` for a task of many steps. Use it to find how good a controller must be, per attempt, for a robot without any judge to complete a ten-step task half the time.
+</Exercise>
+
+<Exercise n="10.3" title="What checking costs" crate="ch10-reasoning" test="ex10_3"
+  hints={["Add up, for each attempt, the chance that the step is still going when the attempt starts."]}>
+  Implement `expected_attempts`. A judge that retries finished steps wastes time; a judge that accepts unfinished ones wastes trust. If each attempt takes 20 seconds, how much longer does the default judge make a ten-step task than no judge, and what does it buy?
+</Exercise>
+
+<NotSure>
+
+**How good the judges really are.** The frontier models' success-detection and progress numbers are reported by their makers on their own evaluations. The one large independent benchmark of VLMs as judges, RoboReward, found no model reliable across tasks. Whether today's ER models would pass a third-party test on false successes is unknown.
+
+**Whether the separate reasoner survives.** Reasoning is moving into controllers: GR00T N1.7's backbone, π0.5's subtasks, Gemini Robotics 1.5's thoughts. It is possible that within a few years the separate reasoning model becomes a component of every VLA rather than a family of its own.
+
+**What the latency costs in practice.** Reasoning over video in the cloud adds delay at exactly the moment a robot needs to decide whether to retry. Vendors describe streaming designs that hide it; there are no independent measurements of end-to-end delay in real deployments.
+
+</NotSure>
+
+## Further reading
+
+- The Gemini Robotics 1.5 report, for the division of labour between a reasoning model and a VLA <Cite k="gemini-robotics-15-er15" />.
+- The Gemini Robotics-ER 1.6 post, for success detection and multi-view reasoning <Cite k="gemini-robotics-er16" />.
+- The Gemini Robotics ER 2 announcement and model card, for progress tracking and orchestration <Cite k="gemini-robotics-er2" />.
+- Cosmos-Reason1, for an open reasoning model and its ontology of physical common sense <Cite k="cosmos-reason1" />.
+- RoboReward, for how well VLMs judge robot episodes when someone else checks <Cite k="roboreward" />.
+- BeTTER, for what static benchmarks hide about embodied reasoning <Cite k="better-embodied-reasoning" />.

@@ -1,0 +1,306 @@
+{/* Chapter 6. Brief: Book.md section 4, chapter 6. Last checked 26 September 2026. House rules: no em-dashes,
+    every maker's number tagged, every figure with takeaway + caption + source. */}
+
+<Figure
+  id="6.1"
+  takeaway="Every world-action model answers two questions: are futures and actions generated together or one after the other, and do they share one backbone?"
+  caption="Eighteen models on the two axes of the WAM survey's figure 5. Select a model to see its mechanism, first arXiv date and link."
+  source="placement from Lu et al. 2026 (arXiv 2609.16074), figure 5, and Book.md chapter 6; summaries from each paper's abstract."
+>
+  <WamMap />
+</Figure>
+
+## Why this chapter exists
+
+A reactive policy maps what it sees to what it does. It never asks what happens next. For most short tabletop tasks that is enough, and chapter 5 showed how far it goes. It fails in a characteristic way: an action that looks right now makes a later subgoal unreachable. A gripper closes too early, a puck is pushed too hard, an arm swings into something the camera could not see. The WAM survey lists long-horizon, delayed-effect, occluded and contact-rich tasks as the places where this bites <Cite k="lu2026-wam-survey" />.
+
+World-action models (WAMs) answer with prediction. They predict how the world will change alongside the actions that change it, in one model or in one training loop. The idea is not new. What changed in 2025 and 2026 is that open video generation models became good enough to supply the prediction, so a robotics lab can fine-tune one instead of paying to pretrain a world model from scratch <Cite k="nvidia-blog-rise-of-wams" />.
+
+After this chapter you will be able to:
+
+- place a new WAM on the grid of figure 6.1 from its abstract, and say which of the four components it trains and which it runs;
+- explain with the simulation in figure 6.3 why imagining consequences helps where reactive control fails, and what that imagination costs;
+- read a WAM paper's latency and robustness claims critically, knowing which comparisons are still missing.
+
+<Quote
+  who="Moritz Reuss"
+  role="robot learning researcher"
+  source="Pretrained to Imagine, Fine-Tuned to Act: The Rise of World-Action Models, NVIDIA Technical Blog"
+  href="https://developer.nvidia.com/blog/pretrained-to-imagine-fine-tuned-to-act-the-rise-of-world-action-models/"
+  date="15 June 2026"
+>
+  My take: WAMs will become the second major recipe for robot foundation models, alongside VLM-based VLAs. The open questions are which formulation of them wins, and which parts of the model architecture and pipeline actually matter. It is likely that the winner is neither pure VLA nor pure WAM, but a hybrid of both.
+</Quote>
+
+## The mechanism in one line
+
+In the notation of chapter 4, a reactive vision-language-action model predicts an action chunk of $H$ steps from the observation history $o_{<t}$ and the instruction $\ell$:
+
+$$
+\hat a_{t:t+H} = f_{\mathrm{VLA}}(o_{<t}, \ell)
+$$
+
+A world-action model predicts the future observations as well <Cite k="lu2026-wam-survey" />:
+
+$$
+\hat o_{t:t+H},\ \hat a_{t:t+H} = f_{\mathrm{WAM}}(o_{<t}, \ell)
+$$
+
+Read the second line term by term. The inputs are unchanged. The hat marks a prediction. The only new thing is the extra output $\hat o_{t:t+H}$: the model has to say what it expects to see, not only what to do. That extra output can be used in three ways. It can be training signal that shapes the model's internal representation and is then thrown away. It can be a plan that the actions are read from. Or it can be a forecast used to check candidate actions before any of them is sent to the motors. Most of this chapter is about which of the three a model uses, and what each one costs.
+
+### Four components
+
+The 2026 surveys compare architectures by breaking the generative process into four conditional distributions <Cite k="lu2026-wam-survey,uwm" />:
+
+| Component | Question it answers | Distribution |
+|---|---|---|
+| Policy | What should I do? | $p(a_{t:t+H} \mid o_{<t}, \ell)$ |
+| Visual planning | What should the future look like? | $p(o_{t:t+H} \mid o_{<t}, \ell)$ |
+| Forward dynamics | What happens if I do this? | $p(o_{t:t+H} \mid o_{<t}, a_{t:t+H})$ |
+| Inverse dynamics | Which actions produce this future? | $p(a_{t:t+H} \mid o_{<t}, o_{t:t+H})$ |
+
+From these, two pathways generate actions. The first models futures and actions jointly:
+
+$$
+p_{\mathrm{joint}}(o_{t:t+H}, a_{t:t+H} \mid o_{<t}, \ell)
+$$
+
+The second plans, then acts: generate a visual plan, then recover the actions with an inverse-dynamics model (IDM):
+
+$$
+p_{\mathrm{plan}}(\hat o_{t:t+H} \mid o_{<t}, \ell) \cdot p_{\mathrm{idm}}(a_{t:t+H} \mid \hat o_{t:t+H}, o_{<t})
+$$
+
+The factorisation matters because inverse dynamics is often the easier problem. If you know the outcome you want, inferring the action that produced it is usually simpler than predicting the action from an instruction alone <Cite k="nvidia-blog-rise-of-wams" />. The hard part, turning words into the right visual change, moves into the video model, which has already seen a great deal of it.
+
+<Figure
+  id="6.2"
+  takeaway="The families differ less in what they can compute than in which of four arrows they train, and which they still run when the robot is moving."
+  caption="The four components between past observations, future observations and actions. Choose a style and switch between training and inference; at inference the steps light up in the order they run."
+  source="after the decomposition in Lu et al. 2026 (arXiv 2609.16074), equations 10 to 15."
+>
+  <FourComponents />
+</Figure>
+
+The same decomposition reads naturally as code. The chapter's Rust crate states the four components as traits, and plan-then-act becomes a two-line function over any planner and inverse model that fit them:
+
+<RustSnippet file="ch06-world-action/src/lib.rs" region="components" caption="The four components as traits" />
+
+<RustSnippet file="ch06-world-action/src/lib.rs" region="plan_then_act" caption="Plan, then act, over any implementation" />
+
+## Why prediction helps: imagine, then act
+
+The simulation below is a deliberately small world. A puck slides on a table with very little friction: each step it keeps 97 percent of its velocity. The goal sits close to the right-hand edge, and an obstacle blocks the straight line to it. The controller sends an acceleration ten times a second.
+
+The reactive controller pushes toward the goal and nothing else. Run it: it hits the obstacle after 15 steps. Nothing in its input tells it about the collision to come, or about the momentum that would carry it past the goal and off the edge even without the obstacle.
+
+The imagine-then-act controller does what a WAM used as a planner does. Before acting it proposes 48 candidate action chunks, imagines each one 30 steps ahead with its world model, scores the imagined futures (end near the goal, slowly, touching nothing), and executes the first 5 steps of the best one. Then it looks again and repeats. It reaches the goal in 43 steps, having imagined 13,230 steps along the way: about 300 imagined steps for every step it actually takes.
+
+<Figure
+  id="6.3"
+  takeaway="Imagining consequences before acting avoids failures a reactive policy cannot see coming, at a cost of hundreds of imagined steps per real one."
+  caption="Top view of the table. Choose a controller and run it. Thin lines are the futures imagined at the last replan; the dashed one was chosen. The sliders change how much is imagined, how long each imagined plan is trusted, and how wrong the world model is."
+  source="rust/ch06-world-action (same model and constants), ported to TypeScript for the page."
+  toy
+>
+  <ImagineThenAct />
+</Figure>
+
+Three things are worth trying.
+
+**Shorten the horizon.** At 5 steps the planner cannot see far enough to route around the obstacle and stop in time; it creeps or stalls. Around 10 to 20 steps it does best. Longer is not automatically better: with a fixed number of random candidates, a 40-step search space is sparser, and the planner does worse. Imagination has to be spent where it pays.
+
+**Make the world model wrong.** Set the friction error to minus 0.05, so the model imagines the puck stopping sooner than it really does. With 5 steps executed per replan, the planner still succeeds, because every half second it looks at the real puck and corrects. Now raise the steps executed before replanning to 30 and run a few seeds. The puck slides off the table. The table below counts outcomes over 20 random seeds, from `cargo run -p ch06-world-action --example seeds`:
+
+| Steps executed before replanning | Perfect model | Friction error minus 0.05 | Friction error minus 0.10 |
+|---|---|---|---|
+| 5 | 20 of 20 reached | 20 of 20 reached | 17 of 20 reached |
+| 15 | 20 of 20 reached | 18 of 20 reached | 0 of 20 reached |
+| 30 | 18 of 20 reached | 1 of 20 reached | 0 of 20 reached |
+
+That is compounding error in miniature. An imagined future drifts further from reality the further ahead it reaches, and the longer a plan runs without checking the world, the more of that drift reaches the motors. Real WAMs face the same choice. Most execute a fixed number of predicted actions after each inference; recent work argues the robot should instead execute longer while its imagined future still matches what it observes, and replan early when it does not <Cite k="when-to-trust-imagination" />. LingBot-VA builds the same idea in from the start, with closed-loop rollouts that keep taking in real observations <Cite k="lingbot-va" />.
+
+<Figure
+  id="6.4"
+  takeaway="A small bias in the world model is harmless for a few steps and decisive after a few dozen."
+  caption="Distance between the imagined and the real puck when the same open-loop chunk is executed, for three friction errors, computed live from the chapter's world model. The dashed line is the goal's radius."
+  source="rust/ch06-world-action, compounding_error_curve."
+  toy
+>
+  <DriftChart />
+</Figure>
+
+**Try the third controller.** It never imagines anything at test time. It was trained, once, from six episodes of the imagine-then-act controller, and at test time it copies what that teacher did in the most similar remembered states. It reaches the goal with zero imagined steps. This is the question Fast-WAM asks of real models, in miniature: is the value of imagination in running it, or in having learned from it <Cite k="fast-wam" />? The toy cannot answer that for large models. It only shows that the answer is not obvious: the student works near the situations it was trained on and has no way to check itself anywhere else.
+
+<RustSnippet file="ch06-world-action/src/world.rs" region="imagined_cost" caption="How imagined futures are scored" />
+
+## Two ways to couple prediction and action
+
+Figure 6.1 sorts models on two axes. This section takes the rows; the next takes the columns.
+
+### Joint prediction: futures and actions together
+
+In a joint model, one generative process produces both the future and the actions, so each shapes the other. The early versions trained a transformer to predict future frames and action chunks together; the modern versions start from a large pretrained video generator <Cite k="lu2026-wam-survey" />.
+
+DreamZero is the scaled-up case. It starts from Wan 2.1, a 14-billion-parameter image-to-video diffusion model <Cite k="wan" />, and turns it into a joint world-action model: a single diffusion transformer denoises video tokens and action tokens together, with no separate inverse-dynamics module <Cite k="dreamzero,nvidia-blog-rise-of-wams" />. Its authors report over twice the generalisation to new tasks and environments of state-of-the-art VLAs in real-robot tests, and real-time control at 7 Hz after model and system optimisations<Claim />.
+
+Cosmos Policy takes a different route to the same end. Instead of adding action tokens and an action head, it writes the action into something the video model already knows how to generate: an extra latent frame. Future states and values (expected cumulative reward) are encoded as latent frames too, which lets the one model act directly or plan, by proposing actions and scoring their predicted futures <Cite k="cosmos-policy" />. Its authors report 98.5 percent average success on LIBERO and 67.1 percent on RoboCasa<Claim />.
+
+<Figure
+  id="6.5"
+  takeaway="Both designs let one video diffusion model produce actions; they differ in whether actions are a new kind of token or disguised as frames."
+  caption="Press the button to watch every generated token go from noise to a clean prediction over the same denoising steps. Left: video frames and action tokens share one transformer. Right: the current frame is given; action, future state and value are generated as frames beside it."
+  source="mechanisms from Ye et al. 2026 (arXiv 2602.15922) and Kim et al. 2026 (arXiv 2601.16163); patterns are illustrative."
+  schematic
+>
+  <JointDenoising />
+</Figure>
+
+Other joint designs fill in the space between. UWM denoises video and actions with independent noise levels, so one trained model supports several inference modes <Cite k="uwm" />. PAD was an early joint denoiser of images and actions <Cite k="pad" />. WorldVLA puts text, images and actions into one autoregressive token space <Cite k="worldvla" />. Motus adds structured joint attention with separate noise schedules for video and action <Cite k="motus" />, and MotuBrain extends it into a three-stream model that serves as policy, world model, video generator and inverse dynamics at once <Cite k="motubrain" />.
+
+### Inverse dynamics: imagine the future, then infer the action
+
+The second row generates a visual plan first and reads the actions off it. The recipe goes back at least to 2023, when UniPi used a text-conditioned video generator as a high-level plan, but the video models of that era had to be trained from scratch at a cost few robotics labs could pay <Cite k="nvidia-blog-rise-of-wams" />.
+
+LingBot-VA is the modern form. It fine-tunes Wan 2.2-5B through 16,000 hours of cross-embodiment robot pretraining, predicts frames and actions in a shared latent space, and runs action prediction and motor execution in parallel to keep up with control <Cite k="lingbot-va,nvidia-blog-rise-of-wams" />. Its July 2026 successor argues that video models built for digital content are the wrong starting point, and pretrains a video-action model for embodiment from the ground up <Cite k="lingbot-va-2" />.
+
+Several models skip the final RGB video and hand intermediate video-model features to the action decoder. mimic-video pairs an internet-scale video model with a flow-matching decoder that acts as an inverse-dynamics model on video latents <Cite k="mimic-video" />; Video Prediction Policy conditions a diffusion policy head on the representations of a text-guided video predictor <Cite k="vpp" />. Seer builds the inverse-dynamics interface into a single transformer by letting action tokens attend only to the current and predicted future states <Cite k="seer" />, and Act2Goal predicts goal states rather than only the next frame <Cite k="act2goal" />. The survey also reads π0.7, which chapter 5 files as a reactive VLA, as a goal-conditioned WAM, because it predicts actions toward a goal image <Cite k="lu2026-wam-survey,pi07" />. The boundary between the two families is thin, and chapter 5 says so too.
+
+### A third option: video only in training
+
+The most consequential result of 2026 may be the one that questions the premise. Fast-WAM keeps video co-training while the model learns, then skips future prediction at test time. Across controlled variants it stays competitive with imagine-then-execute versions, while removing video co-training costs much more; it runs with 190 ms latency, which its authors put at over four times faster than imagine-then-execute WAMs<Claim />. Their reading: the main value of video prediction may lie in better representations learned during training, not in futures generated at test time <Cite k="fast-wam" />.
+
+Others reach the same design from different directions. GigaWorld-Policy predicts actions first and video second, with a causal mask so video tokens never influence actions, which makes video generation optional at inference <Cite k="gigaworld-policy" />; version 0.5 reports 85 ms per inference on a single RTX 4090<Claim /> <Cite k="gigaworld-policy-05" />. ImageWAM swaps the video generator for an image-editing model and never decodes the target image at all, reporting a quarter of the latency of video-based WAMs<Claim /> <Cite k="imagewam" />. DreamWAM supervises the future as motion, geometry and semantics as well as RGB during training, and switches those branches off for deployment <Cite k="dreamwam" />.
+
+The debate is live. A privileged-foresight study argues that joint training does more than regularise: seeing the future during training imposes a correction on action generation that current-only policies capture only partially <Cite k="privileged-foresight-distillation" />. A September 2026 paper questions whether WAMs should be tied to large video-generation backbones at all <Cite k="latent-evolving-wam" />.
+
+## One backbone or two
+
+The columns of figure 6.1 are about plumbing. End-to-end models process language, observations and actions in one backbone; DreamZero and Cosmos Policy are monolithic in this sense, and gain strong coupling between video and action at the price of one set of weights serving dense visual tokens and sparse action targets. Dual systems separate a world module from an action module and connect them through an interface <Cite k="lu2026-wam-survey" />.
+
+Two interfaces dominate. The first is Mixture-of-Transformers routing: separate weights per modality, fused through shared self-attention in every layer, as in LingBot-VA and Fast-WAM. The second is cross-attention, where an action expert reads the world module's features, as in mimic-video and, on the VLA side, π0 and GR00T. The NVIDIA post calls Mixture-of-Transformers the current default in both VLAs and recent WAMs, and expects it to become the dominant WAM architecture as a practical compromise between modularity and coupling <Cite k="nvidia-blog-rise-of-wams" />.
+
+## The price of imagination
+
+Generating video to decide on an action is expensive. The cost has three sources: the number of denoising steps, the number of future frames generated, and the size of the video backbone. A reactive VLA pays none of them.
+
+<Figure
+  id="6.6"
+  takeaway="Generating futures at test time multiplies inference cost by the imagined frames and denoising steps; keeping video to training time does not."
+  caption="Compute per action chunk relative to a reactive VLA, on a log scale, as the imagined horizon grows. The sliders set the denoising steps, the tokens per imagined frame and the backbone's size relative to the VLA."
+  source="a token-count model written for this book, not a measurement."
+  schematic
+>
+  <CostVsHorizon />
+</Figure>
+
+Measured numbers exist, but they are not comparable with each other: each is the authors' own, on their own hardware and task. Read them as orders of magnitude.
+
+| System | Reported speed | Conditions |
+|---|---|---|
+| WAMs that generate video at test time | 590 to 800 ms per action chunk <Claim /> | joint prediction and inverse dynamics modes, as measured in the Fast-WAM study <Cite k="nvidia-blog-rise-of-wams" /> |
+| π0.5 (reactive VLA) | about 190 ms per chunk <Claim /> | same comparison |
+| Fast-WAM | 190 ms <Claim /> | no future generation at test time <Cite k="fast-wam" /> |
+| DreamZero | 7 Hz closed loop <Claim /> | 14B model after model and system optimisations <Cite k="dreamzero" /> |
+| MotuBrain | up to 11 Hz <Claim /> | step reduction, compilation, FP8, DiT caching, action-only inference <Cite k="motubrain" /> |
+| GigaWorld-Policy-0.5 | 85 ms <Claim /> | action-only inference, one RTX 4090 <Cite k="gigaworld-policy-05" /> |
+
+Training costs more too. A rough lower-bound estimate in the NVIDIA post puts DreamZero's action tuning at about 9 zettaFLOPs, and a full Wan-scale video pretraining plus action tuning at about 51, against about 6.9 for a small VLA trained from scratch <Cite k="nvidia-blog-rise-of-wams" />. A strong video prior can reduce the robot data needed; in practice it often trades robot-data efficiency for compute.
+
+The planner in figure 6.3 makes the same trade visible: its "imagined futures per replan" and "horizon" sliders are the test-time compute budget. Test-time scaling work on real WAMs asks when that extra budget is worth spending, ranking sampled rollouts by the geometric consistency of their predicted futures and spending the extra compute only when it is likely to help <Cite k="wam-test-time-scaling" />.
+
+<Callout kind="in-practice">
+  Teams that deploy WAMs stack every inference trick at once. MotuBrain lists step reduction, compilation, FP8 quantisation, DiT caching, action-only inference and real-time chunked execution, together worth over a 50x speed-up on a naive baseline<Claim /> <Cite k="motubrain" />. LingBot-VA runs action prediction in parallel with motor execution <Cite k="lingbot-va" />, and the survey names key-value cache reuse, distillation and few-step samplers as the standard tools <Cite k="lu2026-wam-survey" />. Efficiency is a control requirement, not a detail.
+</Callout>
+
+## What the evidence says so far
+
+Standard simulation suites no longer separate the best models: reported LIBERO success rates for recent WAMs sit near 98 percent <Cite k="cosmos-policy,dreamwam" />. The differences show under perturbation and on real robots.
+
+The most direct comparison so far is a March 2026 robustness study that runs recent WAMs and VLAs on LIBERO-Plus and RoboTwin 2.0-Plus under visual and language perturbations. WAMs come out strong: LingBot-VA reaches 74.2 percent on RoboTwin 2.0-Plus and Cosmos Policy 82.2 percent on LIBERO-Plus. π0.5 matches them on some tasks, but only with extensive training on diverse robot data and varied objectives <Cite k="wam-robustness-study" />. The study is in simulation, and it is one study.
+
+RoboArena runs pairwise, double-blind comparisons of policies on real DROID robots at many institutions <Cite k="roboarena,droid" />. In the April 2026 snapshot DreamZero led π0.5 by 128 points, trained only on DROID data without a large cross-embodiment stage <Cite k="nvidia-blog-rise-of-wams" />.
+
+<Figure
+  id="6.7"
+  takeaway="On the one public real-robot leaderboard, a world-action model leads the VLAs it was compared with, and the scores move."
+  caption="RoboArena scores for four DROID policies: the April 2026 snapshot the NVIDIA post reports, and the official board as archived on 26 September 2026 (DreamZero from 190 A/B evaluations, the π models from 745 to 1,120)."
+  source="NVIDIA Technical Blog, 15 June 2026; robo-arena.github.io, official leaderboard, 26 September 2026. Leaderboard claims."
+>
+  <RoboArenaDots />
+</Figure>
+
+The makers' own numbers point the same way, and should be read as claims. DreamZero reports that video-only demonstrations from other robots or from humans, just 10 to 20 minutes of them, improve performance on unseen tasks by over 42 percent relative, and that it adapts to a new embodiment from 30 minutes of play data<Claim /> <Cite k="dreamzero" />. GigaWorld-Policy reports a 95 percent improvement over π0.5 on RoboTwin 2.0<Claim /> <Cite k="gigaworld-policy" />. NVIDIA previewed GR00T N2 in March 2026 as built on DreamZero research and succeeding at new tasks in new environments more than twice as often as leading VLAs, with availability slated for the end of the year<Claim /> <Cite k="gr00t-n2-preview" />.
+
+<Callout kind="key-paper" title="Fast-WAM (Yuan et al., March 2026)">
+  Fast-WAM is the paper to read first, because it separates two things every other WAM paper bundles together: learning from video, and generating video at test time. It trains variants that keep one and drop the other. Dropping test-time imagination costs little on its benchmarks; dropping video co-training costs a lot. If that holds on real robots and harder tasks, the practical WAM of 2027 imagines while it learns and acts like a VLA <Cite k="fast-wam" />.
+</Callout>
+
+<Callout kind="caveat">
+  Almost every number in this chapter comes from the team that built the model, on its own benchmark setup. The only cross-family robustness study is in simulation, the only public real-robot leaderboard uses one robot platform, and its scores drift as evaluations accumulate: DreamZero read 1750 in April and 1735 in September.
+</Callout>
+
+## Where world-action models are used
+
+Manipulation is the home ground: nearly every model in figure 6.1 is evaluated on arm and bimanual tasks. The idea is spreading. DreamTrajectory brings trajectory-guided action generation with world-model alignment to mobile manipulation <Cite k="dreamtrajectory" />, and Motus2 turns a world model into a self-evolving system for dexterous manipulation, with one set of weights exposing several control interfaces and a closed loop for improving its own policy <Cite k="motus2" />. Chapter 16 covers navigation and driving, where world models are used mostly for look-ahead planning and scenario generation. Chapter 8 covers the neighbouring family, where the world model trains or evaluates a separate policy instead of acting itself.
+
+## Build it yourself in Rust
+
+The crate `rust/ch06-world-action` contains everything the simulation runs. Its imperfect world model has a single, controllable error:
+
+<RustSnippet file="ch06-world-action/src/world.rs" region="forward_model" caption="A world model whose only error is friction" />
+
+The planner is random shooting with a receding horizon, the simplest version of the propose, imagine, choose loop. Besides random chunks it always considers coasting, braking, and a proposal from a simple approach controller, each judged by imagination like the rest:
+
+<RustSnippet file="ch06-world-action/src/world.rs" region="shooting_planner" caption="Imagine, then act" />
+
+The distilled student keeps what the planner did and drops the planner:
+
+<RustSnippet file="ch06-world-action/src/world.rs" region="distill" caption="Trained with imagination, acts without" />
+
+Run the comparisons from the `rust/` folder with `cargo run -p ch06-world-action --example summary` and `cargo run -p ch06-world-action --example seeds`.
+
+## Exercises
+
+The stubs are in `rust/ch06-world-action/src/exercises.rs`. Reference solutions are behind a feature flag, `cargo test -p ch06-world-action --features solutions`, if you want to check your reasoning afterwards.
+
+<Exercise n="6.1" title="Recover the action" crate="ch06-world-action" test="ex6_1"
+  hints={["The velocity update is linear in the action. Solve it for the action.", "Position does not appear in the answer: the velocity change already carries all the information."]}>
+  Implement `inverse_dynamics(prev, next)`, which returns the action that turned one real state into the next. This is the inverse-dynamics component of figure 6.2 in its simplest form: exact, because the toy's physics is known. In a WAM the same function is a learned network, and it has to cope with imagined states that no real action could produce.
+</Exercise>
+
+<Exercise n="6.2" title="Watch imagination drift" crate="ch06-world-action" test="ex6_2"
+  hints={["Roll the model forward once with ForwardModel::rollout; step the real world yourself, one action at a time.", "position returns the first index that satisfies a predicate."]}>
+  Implement `drift`: execute the same action chunk in the real world and in a model's imagination, return the distance between the two pucks after every step, and the first step at which it exceeds a tolerance. Then use it to answer a question the chapter only gestured at: with a friction error of minus 0.03, how many steps ahead can the planner trust its imagination if the goal is 0.4 units wide?
+</Exercise>
+
+<Exercise n="6.3" title="Choose by imagining" crate="ch06-world-action" test="ex6_3"
+  hints={["imagined_cost already knows what a good future is. Your job is only to imagine each candidate and compare.", "Keep the lower index on ties by comparing with a strict less-than."]}>
+  Implement `choose_chunk`, the core of the planner: imagine every candidate action chunk and return the index of the one whose future scores best. The tests check that it brakes before the table edge and goes around the obstacle rather than through it.
+</Exercise>
+
+<Exercise n="6.4" title="The price of imagination" crate="ch06-world-action" test="ex6_4"
+  hints={["Work out the milliseconds per replan first, then how many control steps each replan pays for."]}>
+  Implement `sustainable_rate_hz`: given the candidates imagined per replan, the horizon, the cost of one imagined step, a fixed overhead and the steps executed per replan, return the highest control rate the planner can sustain. Then find the smallest number of candidates and horizon that still reach the goal in figure 6.3, and compute the rate they allow at 0.1 ms per imagined step.
+</Exercise>
+
+<NotSure>
+
+**Whether imagination is needed at test time.** Fast-WAM, GigaWorld-Policy and ImageWAM suggest that on today's benchmarks most of the benefit survives without generating futures during deployment. A privileged-foresight study argues that something is lost, and adaptive-execution work shows that imagined futures are useful as a check on reality. The evidence on each side is mostly simulated, and none of it is a matched comparison on real robots.
+
+**Whether WAMs are more robust than VLAs.** One robustness study, in simulation, says WAMs reach strong robustness with less diverse training data. One real-robot leaderboard, on one platform, puts a WAM first. Neither is the independent, matched, real-world comparison the question needs.
+
+**Whether the taxonomy will hold.** The family is barely a year old as a named category. Figure 6.1 follows the WAM survey; the NVIDIA post uses three different axes, including a "representation-only" paradigm that the 2x2 has no cell for; a second survey organises the same models in two other views <Cite k="wam-survey-shen-2026" />. Several placements are argued either way. Expect this chapter to be redrawn; it is dated for that reason.
+
+**Whether the toy transfers.** The simulation in this chapter shows mechanisms, not the performance of any system. A puck on a table has four state variables; a robot's world has millions. The lessons about horizon, drift and replanning are qualitative.
+
+</NotSure>
+
+## Further reading
+
+- The WAM survey this chapter follows, especially sections II, III and VI <Cite k="lu2026-wam-survey" />.
+- The NVIDIA post for a practitioner's map of the field and its costs <Cite k="nvidia-blog-rise-of-wams" />.
+- Fast-WAM, the key paper above <Cite k="fast-wam" />.
+- DreamZero and Cosmos Policy, the two joint-prediction designs of figure 6.5 <Cite k="dreamzero,cosmos-policy" />.
+- The robustness study, the closest thing yet to a matched comparison <Cite k="wam-robustness-study" />.
+- A second survey with a different taxonomy <Cite k="wam-survey-shen-2026" />, and the concise tutorial from world models to WAMs <Cite k="wm-to-wam-tutorial-2026" />.

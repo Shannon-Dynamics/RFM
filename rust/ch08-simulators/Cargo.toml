@@ -1,0 +1,12 @@
+[package]
+name = "ch08-simulators"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chapter 8 companion code: RL inside a learned world model, and plausible versus feasible rollouts"
+
+[features]
+# Compile the reference solutions in place of the exercise stubs.
+solutions = []
+
+[dependencies]

@@ -1,0 +1,46 @@
+.wrap { display: grid; gap: 1rem; container-type: inline-size; }
+.grid { display: grid; font-family: var(--font-ui); border-top: 1px solid var(--rule-strong); }
+.row { display: grid; grid-template-columns: 11rem repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--rule); }
+.corner { display: grid; align-content: end; gap: 0.1rem; padding: 0.6rem 0.8rem 0.6rem 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.cornerAcross { justify-self: end; }
+.colHead { padding: 0.6rem 0.7rem; font-weight: 600; font-size: 0.9rem; align-self: end; border-left: 1px solid var(--rule); }
+.rowHead { padding: 0.75rem 0.8rem 0.75rem 0; font-size: 0.88rem; color: var(--ink-2); line-height: 1.35; }
+.empty { border-left: 1px solid var(--rule); background:
+  repeating-linear-gradient(135deg, transparent 0 7px, var(--surface-2) 7px 8px); }
+.cell { border-left: 1px solid var(--rule); padding: 0.35rem; }
+.cellLink {
+  display: grid;
+  gap: 0.2rem;
+  height: 100%;
+  padding: 0.45rem 0.6rem 0.5rem 0.75rem;
+  border-left: 4px solid var(--fam);
+  background: var(--surface-2);
+  border-radius: 0 8px 8px 0;
+  text-decoration: none;
+  line-height: 1.25;
+}
+.cellLink:hover { background: var(--accent-bg); }
+.cellLabel { font-weight: 600; font-size: 0.88rem; color: var(--ink); }
+.cellMeta { font-size: 0.78rem; color: var(--ink-3); }
+.key { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 1.2rem; font-family: var(--font-ui); font-size: 0.85rem; color: var(--ink-2); }
+.key li { display: inline-flex; align-items: center; gap: 0.45rem; }
+.keyDot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--fam); }
+
+/* In the docs column (about 650px) the row labels and cells tighten. */
+@container (max-width: 760px) {
+  .row { grid-template-columns: 7.25rem repeat(4, minmax(0, 1fr)); }
+  .cell { padding: 0.25rem; }
+  .cellLink { padding: 0.4rem 0.45rem 0.45rem 0.55rem; }
+  .cellLabel { font-size: 0.8rem; }
+  .cellMeta { font-size: 0.72rem; }
+  .rowHead { font-size: 0.82rem; }
+  .colHead { font-size: 0.82rem; padding: 0.5rem; }
+}
+
+@media (max-width: 760px) {
+  .row { grid-template-columns: 1fr; }
+  .row:first-child { display: none; }
+  .rowHead { font-weight: 600; color: var(--ink); padding-top: 1rem; }
+  .empty { display: none; }
+  .cell { border-left: 0; padding: 0.2rem 0; }
+}

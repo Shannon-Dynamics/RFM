@@ -1,0 +1,31 @@
+# Downloaded reference documents are large and third-party: the index, CSV and BibTeX stay tracked.
+reference/**/*.pdf
+reference/**/*.md
+!reference/README.md
+
+# Build outputs
+node_modules/
+.next/
+out/
+webbook/public/_generated/
+webbook/lib/generated/
+rust/target/
+*.tsbuildinfo
+
+# Secrets and local environment
+.env
+.env.*
+*.pem
+
+# Logs and caches
+*.log
+__pycache__/
+*.pyc
+.cache/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

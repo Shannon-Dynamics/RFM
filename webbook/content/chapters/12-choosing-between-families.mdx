@@ -1,0 +1,132 @@
+import { ComparisonMatrix } from "@/components/viz/ComparisonMatrix";
+import { DecisionFlow } from "@/components/viz/DecisionFlow";
+import { ScenarioCards } from "@/content/ch12/figures";
+
+{/* Chapter 12. Brief: Book.md section 4, chapter 12. Last checked 9 October 2026. L0: no equations. */}
+
+<Figure
+  id="12.1"
+  takeaway="No family wins on every criterion; which one comes out on top depends on what your job weighs most, and modest changes in those weights change the answer."
+  caption="Seven families against eight criteria, scored low, medium or high, where high is always better. Select any cell for the reason behind it. Change the weights, or try the preset jobs, and watch the ranking."
+  source="the authors' judgement as of October 2026, drawn from the evidence in chapters 5 to 11; every cell's reason names its source. Scores also in rust/ch12-choosing."
+>
+  <ComparisonMatrix />
+</Figure>
+
+## Why this chapter exists
+
+Part II described seven families one at a time. A practitioner does not meet them that way. They meet a job: a cell to automate, a robot to make useful, a research question to answer. They want to know which family to start with, what it will cost in data and compute, and how it will fail first.
+
+This chapter adds no new models. It puts the seven families side by side, turns the comparison into a short sequence of questions, and walks three realistic jobs through it. Treat it as a map drawn on a particular date. The matrix encodes the authors' judgement as of October 2026, and some of it will be wrong within a year.
+
+After this chapter you will be able to:
+
+- read the comparison matrix of figure 12.1, including which cells rest on independent evidence and which on vendor claims;
+- walk a new job through the decision flow of figure 12.2 and name a first family to try;
+- predict the first failure mode for that choice, and what to measure to catch it.
+
+<Quote
+  who="Pras Velagapudi"
+  role="chief technology officer at Agility Robotics"
+  source="The Wall Street Journal, 25 December 2025, as quoted in Rodney Brooks, Predictions Scorecard, 2026 January 01"
+  href="https://rodneybrooks.com/predictions-scorecard-2026-january-01/"
+  date="25 December 2025"
+>
+  We've been trying to figure out how do we not just make a humanoid robot, but also make a humanoid robot that does useful work.
+</Quote>
+
+## Reading the matrix
+
+Each column of figure 12.1 is a family and each row a criterion that a deployment team cares about. The scores have three levels, so that nobody mistakes them for measurements. Higher is always better, so "cheap inference" scores high for a small, fast model and low for one that generates video.
+
+Three rows deserve a warning. **Little robot data needed** mixes two things: how much action-labelled data the family needs to pretrain, and how much a new task needs. Large behavior models need few demonstrations per task once pretrained, but every task must still be demonstrated, so the row scores them low. **Open weights** counts what can be downloaded today, not what is promised. **Evidence quality** is the row to read first. It says whether a family's other scores rest on shared benchmarks and independent evaluation, or mostly on what the makers report. Reactive VLAs and large behavior models score high there. World models used as simulators and embodied reasoning models score low, because most of what is known about them comes from vendor posts and surveys.
+
+Two things are worth trying in the figure. First, with all weights equal, reactive VLAs come out on top, mostly on maturity, open weights and evidence. Second, the ranking is fragile. Raising the weight on reasoning about consequences from 1 to 2.25 hands first place to world-action models, level with world models used as simulators, and raising the weight on cheap inference by the same amount hands it to large behavior models. Exercise 12.3 measures how much each criterion must move to change the answer. One structural fact survives every weighting: no family is dominated, meaning none is matched or beaten on every criterion by another. That is the strongest argument that the seven families are real alternatives rather than a ranking in disguise. Exercise 12.2 checks it.
+
+## The decision walk-through
+
+Figure 12.2 turns the matrix into four questions. They are ordered from the cheapest answer to the most expensive, so that a job stops at the simplest family that fits.
+
+<Figure
+  id="12.2"
+  takeaway="Four questions about the job, asked in order, name a first family to try; most jobs stop at the first or second question."
+  caption="The decision flow from Book.md chapter 12. Answer each question, or pick a worked scenario, and follow the path to a starting point and the chapters to read."
+  source="the authors' synthesis of Part II; the same flow is implemented in rust/ch12-choosing."
+  schematic
+>
+  <DecisionFlow />
+</Figure>
+
+**Is it a short-horizon task with objects like those in the training data?** If yes, start with a reactive VLA. It is the most documented, best-supported and cheapest family to fine-tune, and chapter 5 showed that hundreds of demonstrations often suffice. Most industrial jobs that are automated today look like this.
+
+**Does it involve contact, occlusion, or effects that appear only later?** If yes, a reactive policy will make locally sensible moves that ruin later steps, which is the gap chapter 6 opened with. Start with a world-action model, or a latent-prediction model if inference cost matters (chapter 7). If the contact state itself is what matters, as in insertion or cloth handling, add geometry-first models to the list (chapter 9).
+
+**Is there action-labelled robot data for this body?** If no, the realistic route is to pretrain on video with latent actions and adapt with a small decoder (chapter 7), and to use a world model to multiply whatever data you collect (chapter 8).
+
+**Is the robot restricted to onboard compute?** If yes, a quantised VLA on the robot, with an onboard reasoning model only if it fits. If a network is available, put an embodied reasoning model above a controller (chapter 10). The controller can be a VLA, or a large behavior model where the tasks are fixed and speed matters most (chapter 11).
+
+The flow is deliberately simple, and real jobs blur its questions. A household task can be short-horizon in one room and long-horizon in the next. The questions are still the right ones to ask first, because each one corresponds to a property that separates the families: horizon, contact, data and compute.
+
+## Three worked scenarios
+
+<Figure
+  id="12.3"
+  takeaway="The family follows from the job, and so does the first thing that will go wrong; plan the measurement for that failure before deployment."
+  caption="Three jobs walked through the decision flow: the robot, the task, the answers to the four questions, the families chosen, the first failure to expect and what to measure. The same scenarios are presets in figure 12.2."
+  source="the authors' synthesis; failure modes from chapters 5, 10 and 11, and from the Gemini Robotics-ER announcements for instrument reading."
+>
+  <ScenarioCards />
+</Figure>
+
+The three cards share a pattern worth making explicit. The first failure is rarely the model's headline weakness. For the warehouse VLA it is not reasoning about consequences, which the job does not need, but distribution shift in the products. For the household humanoid it is not the controller but the judgement of when a step is done. For the inspection robot it is perception and connectivity. In each case the useful question is not "which family is best?" but "how will this family fail on this job, and how will I know?"
+
+<Callout kind="in-practice">
+An independent industrial survey from March 2026 assessed 324 robot foundation models against 149 criteria drawn from industrial requirements, through 48,276 criterion-level decisions. It found industrial maturity "limited and uneven": even the highest-rated models satisfy only a fraction of the criteria, with narrow peaks rather than integrated coverage <Cite k="industrial-rfm-survey-2026" />. The authors conclude that progress depends less on benchmark successes than on safety, real-time feasibility, robust perception and cost-effective system integration. That is a useful corrective to any matrix, including this one. A practitioner guide from April 2026 gives the same advice at a smaller scale: train contact-heavy skills in simulation, and use a pretrained VLA where its knowledge helps <Cite k="robocloudhub-gr00t-n2" />.
+</Callout>
+
+<Callout kind="caveat">
+The matrix is the authors' judgement, not a measurement. Each cell names its reason, and the evidence-quality row says how much to trust the family's column, but the three-level scale hides large differences inside each level. Two readers with the same evidence could reasonably move several cells by one level. Use the matrix to structure a decision, not to make it.
+</Callout>
+
+## In code
+
+The decision flow fits in a dozen lines. Writing it as code makes its assumptions inspectable, and easy to argue with.
+
+<RustSnippet file="ch12-choosing/src/lib.rs" region="flow" caption="The decision flow of figure 12.2" />
+
+## Exercises
+
+The stubs are in `rust/ch12-choosing/src/exercises.rs`. This chapter is equation-free; the exercises are about weighing, comparing and stress-testing a judgement.
+
+<Exercise n="12.1" title="A weighted score" crate="ch12-choosing" test="ex12_1"
+  hints={["Multiply each score by its weight, add them up, and divide by the total weight.", "Break ties in favour of the family that comes first in ALL."]}>
+  Implement `weighted_score` and `best`. Then choose weights for a job you know, and check whether the answer agrees with the decision flow. If it does not, which of the two do you trust, and why?
+</Exercise>
+
+<Exercise n="12.2" title="Every family wins on something" crate="ch12-choosing" test="ex12_2"
+  hints={["A family is dominated if another is at least as good everywhere and strictly better somewhere.", "Compare every pair; a family cannot dominate itself."]}>
+  Implement `dominated`. The book's matrix has no dominated family. Find the smallest change to one cell that makes one family dominated, and say whether you would believe the matrix more or less after that change.
+</Exercise>
+
+<Exercise n="12.3" title="How fragile is the ranking?" crate="ch12-choosing" test="ex12_3"
+  hints={["Increase one weight in steps of 0.25 and recompute the winner each time.", "Stop at the first change of winner, or give up at an increase of 10."]}>
+  Implement `flip`. For each criterion, find how much its weight must rise from equal weights to change the winner. Which criteria can never dethrone the leader, and what does that tell you about why the leader leads?
+</Exercise>
+
+<NotSure>
+
+**Whether the families stay separate.** Chapters 5 to 11 each ended by noting that the family's boundary is blurring: VLAs adding future prediction, reasoning moving into controllers, imitation primitives everywhere. A matrix with seven columns may become a matrix of design choices within one model.
+
+**Whether the criteria are the right ones.** The industrial survey uses 149 criteria; this matrix uses eight. Safety, which this book covers in chapters 15 and 17, is absent as a row because no family has enough evidence to score it.
+
+**How quickly the scores age.** The evidence-quality and maturity rows are the most likely to change, in both directions, as independent evaluations of world-action models and reasoning models appear. Check the date on this chapter before relying on it.
+
+</NotSure>
+
+## Further reading
+
+- The industrial readiness survey, for a far more detailed set of criteria <Cite k="industrial-rfm-survey-2026" />.
+- The WAM survey, for the taxonomy that most of Part II builds on <Cite k="lu2026-wam-survey" />.
+- The April 2026 comprehensive review of foundation models in robotics, for the broader landscape <Cite k="psiris2026-fm-robotics-review" />.
+- TRI's careful examination of large behavior models, for how to evaluate a choice once made <Cite k="tri-lbm" />.
+- Rodney Brooks' annual predictions scorecard, for a long view on hype and deployment <Cite k="brooks-predictions-2026" />.

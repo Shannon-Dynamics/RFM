@@ -1,0 +1,156 @@
+import { LatencyBudget } from "@/components/viz/LatencyBudget";
+import { NetworkJitter } from "@/components/viz/NetworkJitter";
+import { BenchmarkMap } from "@/components/viz/BenchmarkMap";
+import { ReadinessRadar } from "@/components/viz/ReadinessRadar";
+import { SafetyBoundary } from "@/components/viz/SafetyBoundary";
+
+{/* Chapter 15. Brief: Book.md section 4, chapter 15. Last checked 9 October 2026. L0: no equations. */}
+
+<Figure
+  id="15.1"
+  takeaway="A robot that stops to think while executing long chunks can be blind to a change for more than a second; executing while thinking cuts that to a few hundred milliseconds."
+  caption="Top: one pass from camera to motor, stage by stage, on the robot or in the cloud. Bottom: the worst-case time from a change in the scene to the robot acting on it. Change the chunk length, the network and the execution mode."
+  source="illustrative stage timings from this book, in rust/ch15-deployment; asynchronous execution after real-time chunking (arXiv 2506.07339)."
+  toy
+>
+  <LatencyBudget />
+</Figure>
+
+## Why this chapter exists
+
+A model that works in a paper is not yet a model that works in a factory. Between the two lie three kinds of engineering. The model must run fast enough, on hardware the robot can carry or reach. Someone must measure whether it works, in a way that predicts how it will behave on the job. And it must fit into a safety case that a regulator, an insurer and a works council will accept. This chapter covers each in turn, at the level of what a deployment team needs to ask, not how to implement the answers.
+
+After this chapter you will be able to:
+
+- break a robot's reaction time into its parts with figure 15.1, and explain why long action chunks executed synchronously are dangerous;
+- choose where to run each part of a model, on the robot or in the cloud, and say what each choice depends on;
+- say what each common benchmark measures and does not, and read an industrial readiness assessment.
+
+<Quote
+  who="Michael Yip"
+  role="professor at UC San Diego and director of the Advanced Robotics and Controls Laboratory"
+  source="NVIDIA Announces NVIDIA Isaac GR00T Reference Humanoid Robot for Academic Research, NVIDIA Newsroom"
+  href="https://nvidianews.nvidia.com/news/nvidia-open-humanoid-robot-reference-design"
+  date="31 May 2026"
+>
+  Advancing robotics research for real-world problems requires humanoids that can move, interact and manipulate with precision in dynamic environments.
+</Quote>
+
+## The latency budget
+
+Every pass of a VLA has a cost in time: capture an image, prepare it, run the vision-language backbone, run the action head, send the result to the motor controller. Figure 15.1 uses illustrative timings, about 130 milliseconds on the robot, but the structure is general. A cross-accelerator study from April 2026 found the same two phases in real VLAs: a compute-bound backbone followed by a memory-bound action expert, which leaves hardware underused. It also found that right-sized edge devices can meet control rates at lower cost and energy than flagship GPUs <Cite k="vla-xpu-deployment" />.
+
+The number that matters for safety is not one pass, but how long the robot is blind to a change. With action chunking (chapter 4), a robot that stops to think executes a whole chunk before it looks again. If the chunk lasts two seconds, a person who steps into the workspace just after the robot looked is not seen for two seconds, plus the time to think about it. Asynchronous execution looks again as soon as the last pass finishes, so the worst case is about two passes, whatever the chunk length. Real-time chunking does this for flow-based VLAs without retraining <Cite k="real-time-chunking" />, and LingBot-VA uses asynchronous inference for the same reason <Cite k="lingbot-va" />. The other tools that shrink the budget are fewer denoising steps, quantisation, and export to optimised runtimes. GR00T N1.7 adds full-pipeline ONNX and TensorRT export for desktop GPUs and edge platforms <Cite k="gr00t-n17-isaac-gr00t-repo" />. One industry survey reports quantised VLAs running at 10 to 25 Hz on consumer-grade GPUs<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />.
+
+## Where to run the model
+
+<Figure
+  id="15.2"
+  takeaway="Running everything on the robot makes every cycle predictable; running in the cloud buys faster compute at the price of the network's worst moments; the split keeps motion local and puts only planning on the network."
+  caption="Two hundred control cycles over a shared network with occasional stalls. Compare three placements and change the control deadline."
+  source="illustrative network model in rust/ch15-deployment; placements after Gemini Robotics (arXiv 2503.20020), Gemini Robotics On-Device (Google DeepMind, June 2025) and the GR00T platform on Jetson Thor (NVIDIA, July 2026)."
+  toy
+>
+  <NetworkJitter />
+</Figure>
+
+There are three options. **All on the robot** makes timing predictable and removes the network as a failure mode. Google DeepMind's case for Gemini Robotics On-Device is exactly that it is "helpful for latency sensitive applications" and robust "in environments with intermittent or zero connectivity" <Cite k="gemini-robotics-on-device" />. NVIDIA's GR00T platform deploys post-trained policies to Jetson Thor for on-device inference <Cite k="nvidia-blog-gr00t-end-to-end" />. **All in the cloud** buys the biggest models and fastest GPUs, and makes every motion depend on the network. **The split** keeps the controller on the robot and puts the reasoning in the cloud. Gemini Robotics hosts its backbone in the cloud with a local action decoder on the robot <Cite k="gemini-robotics" />, and the embodied reasoning models of chapter 10 sit above an on-robot controller. In the split, a network stall delays a plan, not a motion, which is usually the right failure to have.
+
+## Evaluation
+
+Chapter 11 showed how many trials it takes to tell two policies apart. This section is about what the trials should be. Figure 15.3 places the common benchmarks by two properties: simulated or real, and short or long tasks.
+
+<Figure
+  id="15.3"
+  takeaway="Most benchmarks are simulated and short; real-robot evaluation exists but is either one lab's or short; nobody shares a benchmark for long tasks on real robots."
+  caption="Common evaluation setups placed by simulated versus real and by task horizon. Select one for what it measures and what it does not."
+  source="each benchmark's paper: ManiSkill3 (arXiv 2410.00425), LIBERO (2306.03310), LIBERO-Plus (2510.13626), RoboTwin 2.0 (2506.18088), CALVIN (2112.03227), RoboArena (2506.18123), TRI LBM (2507.05331); BEHAVIOR-1K as studied in 2604.21192. Placement is the authors' reading."
+  schematic
+>
+  <BenchmarkMap />
+</Figure>
+
+Two findings sharpen the picture. LIBERO-Plus perturbed the setups VLAs are usually tested on, changing camera viewpoints, initial robot states, lighting and more. Performance dropped "from 95% to below 30% under modest perturbations", and the models largely ignored their language instructions <Cite k="libero-plus" />. A study of the BEHAVIOR-1K household challenge argued that scoring only the final state of objects "can potentially exaggerate reported performance", and proposed counting safety violations along the way <Cite k="vla-open-world-eval" />. On the real-robot side, RoboArena crowd-sources double-blind pairwise comparisons across evaluators who choose their own tasks, which scales diversity <Cite k="roboarena" />. TRI's blind A/B trials show what rigour looks like inside one lab <Cite k="tri-lbm" />. None of these measures contact quality, or recovery over a long task on a real robot.
+
+<Callout kind="caveat">
+Benchmarks are fragmented and mostly simulated. The field does not have a shared protocol for evaluating long tasks on real robots, and this book cannot supply one. For a deployment decision, the honest substitute is a small evaluation of your own, on your task, with enough trials to see the difference you care about (chapter 11, figure 11.4).
+</Callout>
+
+## Industrial readiness
+
+A March 2026 survey asked a different question: not how well models do on benchmarks, but how well their papers address what industry needs. It distilled the industrial literature into eleven implications, from adaptability and safety to real-time performance and data, and operationalised them as 149 criteria. It then assessed 324 manipulation-capable models through 48,276 criterion-level decisions, made by an LLM-assisted pipeline validated against expert judgements <Cite k="industrial-rfm-survey-2026" />. Figure 15.4 shows its five highest-rated models.
+
+<Figure
+  id="15.4"
+  takeaway="Even the highest-rated models satisfy about an eighth of the industrial criteria, with a peak on adaptability and near-zero on safety, precision and real-time performance."
+  caption="The share of each implication's criteria the survey rates as fulfilled, for its five highest-rated models. Select a model."
+  source="Kube et al. 2026 (arXiv 2603.06749), table 11; ratings from an LLM-assisted pipeline validated against expert judgements."
+>
+  <ReadinessRadar />
+</Figure>
+
+The highest-rated model, Gemini Robotics 1.5, fulfils 12 percent of the criteria overall, with 44 percent on adaptability and flexibility and none on precision, real-time performance or cost-effective integration <Cite k="industrial-rfm-survey-2026" />. The survey's reading is that recent work advances "one or two enabling dimensions at a time". Gemini's lead comes from combining a reasoning model with a VLA, which suggests that near-term deployments will be layered systems <Cite k="industrial-rfm-survey-2026" />. Its scores rate papers, not deployed systems, and a vendor may have solved in practice what it did not publish, so the numbers are a lower bound on readiness and an upper bound on public evidence.
+
+<Callout kind="key-paper" title="Robotic Foundation Models for Industrial Control (Kube et al., March 2026)">
+The survey is the most useful single document for a team taking a robot foundation model into a factory. Its catalogue of 149 criteria works as a checklist for a readiness review, and its eleven implications name what a pilot must demonstrate beyond a success rate. Its conclusion is the one this chapter argues: progress depends "less on isolated benchmark successes than on systematic incorporation of safety, real-time feasibility, robust perception, interaction, and cost-effective system integration into auditable deployment stacks" <Cite k="industrial-rfm-survey-2026" />.
+</Callout>
+
+## Safety and certification
+
+Industrial robots operate under functional-safety standards. The survey notes the role of ISO 10218 for the safe installation and operation of robots, and ISO/TS 15066 for collaborative operation and contact <Cite k="industrial-rfm-survey-2026" />. These standards were written for systems whose behaviour can be specified, analysed and tested part by part. A modular pipeline fits that pattern: perception, planning and control each have a specification, and much of the chain can sit inside the safety case. A learned end-to-end policy does not. It has no specification beyond its training data, and its failure modes cannot be enumerated in advance.
+
+<Figure
+  id="15.5"
+  takeaway="With a learned policy, the certifiable boundary shrinks to an independent safety monitor that can stop the robot; the policy itself sits outside it."
+  caption="Where a certifiable boundary can be drawn around a modular pipeline and around a learned policy. Switch between the two."
+  source="the authors' schematic; the role of independently certified supervision follows the industrial readiness survey (arXiv 2603.06749)."
+  schematic
+>
+  <SafetyBoundary />
+</Figure>
+
+The practical answer today is the one in figure 15.5. Keep a conventional, certifiable safety layer, such as speed and separation monitoring and force limits, between the learned policy and the motors, independent of it and able to stop it. One of the survey's criteria describes exactly this: a system supervised "by independently certified controllers/modules" that can reject unsafe commands <Cite k="industrial-rfm-survey-2026" />. Model makers say the same in their own terms. Google's model card for Gemini Robotics ER 2 asks users not to use the robotics models for safety-critical applications such as healthcare and transportation <Cite k="gemini-robotics-er2" />. This is the modular pipeline's advantage that learned policies gave up, and chapter 17 returns to it as an open problem.
+
+## In code
+
+The crate's budget is a list of stages and a sum. The value is in making each stage's time explicit, so it can be measured and argued about.
+
+<RustSnippet file="ch15-deployment/src/lib.rs" region="budget" caption="Two pipelines, a latency sum and a model of a shared network" />
+
+## Exercises
+
+The stubs are in `rust/ch15-deployment/src/exercises.rs`. This chapter is equation-free; the exercises are arithmetic about time and coverage.
+
+<Exercise n="15.1" title="How long until the robot reacts?" crate="ch15-deployment" test="ex15_1"
+  hints={["Synchronous: the rest of the chunk, then one pass.", "Asynchronous: the pass already running, then one more."]}>
+  Implement `worst_reaction_ms`. Then find the longest chunk for which a synchronous robot reacts within half a second, and compare it with the chunk lengths reported in chapters 4 and 5.
+</Exercise>
+
+<Exercise n="15.2" title="What the network does to a deadline" crate="ch15-deployment" test="ex15_2"
+  hints={["Count the cycles whose compute plus round trip fits the deadline, and divide by the number of cycles."]}>
+  Implement `deadline_hit_rate`. Then find the deadline the cloud placement needs to be on time 99 percent of the time with the crate's network, and say whether a motion controller could live with it.
+</Exercise>
+
+<Exercise n="15.3" title="The weakest link" crate="ch15-deployment" test="ex15_3"
+  hints={["Track the lowest value and its index in one pass.", "Count the implications at or above the threshold separately."]}>
+  Implement `weakest`. Then argue, in three sentences, whether a readiness review should rank models by their total score or by their weakest implication.
+</Exercise>
+
+<NotSure>
+
+**What real deployments achieve.** Latency, uptime and failure rates of deployed robot foundation models are rarely published. The figures in this chapter are illustrative or come from papers and surveys, not from production logs.
+
+**Whether a learned policy can ever sit inside the safety case.** Today's answer is to wrap it in an independent safety layer. Whether formal methods, runtime verification or new standards will let some learned components inside the boundary is open, and chapter 17 discusses the candidates.
+
+**How to evaluate long tasks on real robots.** The empty quadrant in figure 15.3 is the field's largest evaluation gap. Distributed efforts like RoboArena show one way to scale real-world evaluation; none yet covers long horizons.
+
+</NotSure>
+
+## Further reading
+
+- The industrial readiness survey, the best checklist for a deployment review <Cite k="industrial-rfm-survey-2026" />.
+- LIBERO-Plus, for what perturbations reveal about benchmark scores <Cite k="libero-plus" />.
+- RoboArena, for distributed real-world evaluation <Cite k="roboarena" />.
+- How VLAs (really) work in open-world environments, for safety-aware metrics <Cite k="vla-open-world-eval" />.
+- Real-time chunking, for asynchronous execution without retraining <Cite k="real-time-chunking" />.
+- The cross-accelerator study, for choosing deployment hardware <Cite k="vla-xpu-deployment" />.

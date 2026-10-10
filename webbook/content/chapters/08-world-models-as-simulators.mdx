@@ -1,0 +1,180 @@
+import { WorldModelRoles } from "@/components/viz/WorldModelRoles";
+import { SyntheticLoop } from "@/components/viz/SyntheticLoop";
+import { ImaginationRL } from "@/components/viz/ImaginationRL";
+import { PlausibleFeasible } from "@/components/viz/PlausibleFeasible";
+
+{/* Chapter 8. Brief: Book.md section 4, chapter 8. Last checked 3 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="8.1"
+  takeaway="In this family the world model is never the policy: it is the place where planning, data, training and evaluation happen instead of on a real robot."
+  caption="One world model, four jobs. Select a job for what goes in, what comes back, which models do it, and where it goes wrong."
+  source="roles after the WAM survey (arXiv 2609.16074) and WorldArena (2602.08971); examples from each paper's abstract."
+>
+  <WorldModelRoles />
+</Figure>
+
+## Why this chapter exists
+
+The families so far all produce a policy: something that, given what the robot sees, says what to do. This chapter is about models that do not. A world model as a simulator answers a different question: if this were done, what would happen next? Other models then use the answer. A planner tries candidate actions in it. A data pipeline asks it to imagine thousands of demonstrations nobody recorded. A reinforcement learning (RL) algorithm trains a policy inside it, as if it were a video game. An evaluator runs a policy in it before letting the policy near a real robot.
+
+The motivation is economic and practical. Real robot interaction is slow, expensive and, for RL, risky: a policy that is still learning breaks things. Physics simulators are fast and safe but narrow, and their images and contact physics never quite match reality. Learned world models promise the breadth of real video with the safety of a simulator, at a fidelity cost that is the subject of most of this chapter.
+
+After this chapter you will be able to:
+
+- name the four roles a world model plays for robot learning, and place a new paper in one of them;
+- explain with figure 8.3 how a policy trained in imagination exploits the model's mistakes, and two ways to limit it;
+- tell a plausible rollout from a feasible one with figure 8.4, and say why image-quality metrics do not tell them apart.
+
+<Quote
+  who="Steve Cousins"
+  role="executive director of the Stanford Robotics Center"
+  source="NVIDIA Announces NVIDIA Isaac GR00T Reference Humanoid Robot for Academic Research, NVIDIA Newsroom"
+  href="https://nvidianews.nvidia.com/news/nvidia-open-humanoid-robot-reference-design"
+  date="31 May 2026"
+>
+  Robotics moves fastest when researchers can build on open platforms, share code and test ideas on real machines.
+</Quote>
+
+## The mechanism
+
+A world model in this chapter is a forward dynamics model in the sense of chapter 4. It predicts the next observation from what has been seen and what is done:
+
+$$
+\boxed{\hat o_{t+1} = W(o_{\le t},\ a_t)}
+$$
+
+Two features make the modern versions different from a physics engine. The observation $o$ is camera video, so the model can be trained on footage rather than on hand-built scenes. And $W$ is a large generative model, usually a video diffusion model, pretrained on internet-scale video and then adapted to robots. NVIDIA's Cosmos-Predict2.5 is the clearest open example: trained on 200 million curated video clips, released at 2 and 14 billion parameters, and built to support "synthetic data generation, policy evaluation, and closed-loop simulation" <Cite k="cosmos-predict25" />. Genie showed that the actions themselves can be latent: trained on unlabelled internet video, it lets a user act frame by frame in worlds it generates <Cite k="genie" />.
+
+The idea of learning a world model and acting inside it is older than any of these. PlaNet planned in a learned latent model in 2018, Dreamer learned behaviours by imagining in it, and DreamerV3 outperformed specialised methods across more than 150 tasks with a single configuration, including collecting diamonds in Minecraft from scratch <Cite k="planet,dreamer,dreamerv3" />. What changed in 2025 and 2026 is the observation: real camera video of real robots, at a quality good enough that a policy trained on it can transfer.
+
+## Role 1: the data engine
+
+The most widely used role is generating training data. Video models generate pixels, not actions, so every synthetic-data pipeline has the same shape: generate a video, then recover the actions that would have produced it with an inverse dynamics model,
+
+$$
+\boxed{\hat a_t = \mathrm{IDM}(o_t,\ o_{t+1})}
+$$
+
+and train the policy on the result as if it were a demonstration. DreamGen made the recipe explicit in four stages <Cite k="dreamgen" />, drawn in figure 8.2.
+
+<Figure
+  id="8.2"
+  takeaway="Real data is the seed and the world model multiplies it; the inverse dynamics step is what turns video back into training data."
+  caption="The synthetic data loop. DreamGen's four stages, with evaluation closing the loop. Select a stage for what goes in and comes out."
+  source="Jang et al. 2025 (arXiv 2505.12705), section 1 and figure 2."
+  schematic
+>
+  <SyntheticLoop />
+</Figure>
+
+The results are what made the role popular. DreamGen reports that a humanoid learned 22 new behaviours, in seen and unseen environments, from teleoperation data of a single pick-and-place task in one environment <Cite k="dreamgen" />. NVIDIA's synthetic motion blueprint generated 780,000 trajectories, which it equates to 6,500 hours of human demonstration, in 11 hours, and reports improving GR00T N1's performance by 40 percent when combining them with real data<Claim /> <Cite k="nvidia-pr-gr00t-n1" />. GigaWorld-0 is designed explicitly as a data engine, combining video generation with 3D reconstruction and physical system identification. Its makers report that GigaBrain-0, trained on its data, performs strongly on physical robots "without any real-world interaction during training" <Cite k="gigaworld-0,gigabrain-0" />. Cosmos-Transfer does the related job of style transfer: it turns simulator renderings or segmentation maps into realistic video, for sim-to-real and real-to-real augmentation <Cite k="cosmos-transfer1" />.
+
+<Callout kind="caveat">
+One industry survey reports that teams at CMU and Stanford found VLAs trained on 40 percent synthetic data matched policies trained on 100 percent real data on held-out tasks<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />. The report names no papers, and this book has not found the primary sources. Treat the figure as a rumour with a plausible direction, not as a result.
+</Callout>
+
+## Role 2: the RL environment
+
+Imitation learning copies what demonstrators did. To improve beyond them, a policy has to try things and learn from the outcome, which is RL. On a real robot that means thousands of attempts, resets and risk. Inside a world model it means compute. The policy acts, the model predicts what happens, a reward model scores it, and the policy updates. The catch fits in one line. The policy maximises the return the model predicts, $\hat J(\pi)$, not the real return $J(\pi)$, and the difference is the model's bias:
+
+$$
+\boxed{\text{model bias} = \hat J(\pi) - J(\pi)}
+$$
+
+A policy that is good at maximising $\hat J$ is, among other things, good at finding where $\hat J$ is too high. Figure 8.3 shows how quickly that happens.
+
+<Figure
+  id="8.3"
+  takeaway="A policy trained inside a world model optimises the model, and the first thing it finds is the model's blind spot."
+  caption="A robot learns how hard to push a block onto a mark near the table's edge, training only inside a world model fitted to logged pushes. Train it, then widen the logged data or keep the policy near it."
+  source="this book's toy, in rust/ch08-simulators; the failure mode is the model bias named in WMPO (arXiv 2511.09515), World-VLA-Loop (2602.06508) and MBDPO (2605.26282)."
+  toy
+>
+  <ImaginationRL />
+</Figure>
+
+With logged pushes only up to a strength of 0.4, the world model is a straight line through a curve that bends upwards, and it has never seen the block fall. Inside the model, the best push is about 0.85: the predicted slide lands on the mark and the imagined reward is 0.99. In the real world a push of 0.85 sends the block off the table. Nothing in the training signal warned the policy, because the training signal was the model.
+
+The two fixes in the figure are the two families of fixes in the literature. **Stay near the data**: limit the policy to where the model has evidence, which is safe but stops short of the best push. **Fix the data**: collect where the policy now goes, including failures, and retrain the model. With logged pushes up to 1.0 the model learns where the edge is, and the policy lands close to the mark. World-VLA-Loop builds that second fix into the algorithm. It curates successful and "near-success" trajectories so the model learns subtle failures, predicts rewards from the same latents as the video, and feeds each improved policy's rollouts back into the world model <Cite k="world-vla-loop" />. VLA-MBPO attacks multi-view consistency and error compounding directly <Cite k="vla-mbpo" />. A May 2026 study argues the deeper problem is a misalignment between search and value learning, and unifies them through diffusion policies <Cite k="wm-rl-diffusion-policy-optimization" />.
+
+The results so far are encouraging. World4RL refines pretrained policies entirely inside a frozen diffusion world model <Cite k="world4rl" />. WMPO runs on-policy RL for VLAs without touching the real environment and reports emergent self-correction <Cite k="wmpo" />. DreamPlan fine-tunes a vision-language planner inside a video world model trained on the planner's own suboptimal exploration <Cite k="dreamplan" />. WAM-OPD, from August 2026, swaps sparse-reward RL for dense supervision from a teacher on the student's own rollouts. Its authors present early RoboTwin results as "an initial capability proof rather than evidence of broad or uniform generalization" <Cite k="wam-opd" />.
+
+## Role 3: the evaluator
+
+Evaluating a policy on a real robot is the slowest step in robot learning, and chapter 15 is about doing it well. A world model that predicted real success rates would make evaluation cheap. The Interactive World Simulator runs stable interactions for more than 10 minutes at 15 frames per second on a single RTX 4090. Its authors report that policies trained on its generated data perform comparably to those trained on the same amount of real data, and that success in the model correlates strongly with success in the real world <Cite k="iws" />. DreamDojo lists policy evaluation among its applications <Cite k="dreamdojo" />.
+
+The warning comes from WorldArena, which evaluated 14 world models as data engines, policy evaluators and planners and found "a significant perception-functionality gap": high visual quality "does not necessarily translate into strong embodied task capability" <Cite k="worldarena" />. Figure 8.4 shows the simplest version of that gap.
+
+## Role 4: the planner
+
+Chapter 6 covered planning with a world model in detail: imagine candidate futures, score them, act on the best. The same risk applies as in RL, since the planner chooses whichever candidate the model scores highest. V-JEPA 2-AC, from chapter 7, plans in feature space towards image goals <Cite k="v-jepa-2" />, and Cosmos Policy can run as a policy or as a planner <Cite k="cosmos-policy" />.
+
+## Plausible is not feasible
+
+<Figure
+  id="8.4"
+  takeaway="A rollout can look right in every frame and still ask the robot for a motion it cannot make; only decoding it into actions reveals the difference."
+  caption="Two generated rollouts with the same start and end. Each frame of both is plausible. Switch between them and read the speeds an inverse dynamics model would extract."
+  source="this book's toy, in rust/ch08-simulators; the executability gap is named and used as a reward in EVA (arXiv 2603.17808)."
+  toy
+>
+  <PlausibleFeasible />
+</Figure>
+
+A video model is trained to produce frames that look like real video. Nothing in that objective says the motion between frames must be achievable by a particular robot. EVA calls the mismatch "the executability gap": visually coherent rollouts that "violate rigid-body and kinematic consistency" and decode into unstable or infeasible commands <Cite k="eva" />. Its fix is to turn the inverse dynamics model into a reward. Generated videos are scored by the smoothness and legality of the actions they imply, which stays informative "even when generated videos contain severe visual artifacts" <Cite k="eva" />. Exercise 8.3 implements the simplest version of that check.
+
+## Good at, bad at
+
+**What it is good at.** It multiplies scarce robot data, enables RL without physical risk, and supports evaluation before deployment. It is also the one family whose output a person can watch: a generated rollout can be inspected frame by frame, which a latent vector (chapter 7) cannot.
+
+**What it is bad at.** Model bias propagates into whatever is trained in the model. Plausible is not feasible. Multi-view consistency remains weak, which is why VLA-MBPO needs a dedicated mechanism for it <Cite k="vla-mbpo" />. And it is compute-heavy: generating video is the most expensive operation in this book, which matters when RL needs millions of steps.
+
+<Callout kind="in-practice">
+The robustness question from chapter 6 applies here too. A March 2026 study comparing world-action models and VLAs under visual and language perturbations found strong robustness for the world-action models, with LingBot-VA reaching 74.2 percent on RoboTwin 2.0-Plus <Cite k="wam-robustness-study" />. Robustness of the policy is not the same as fidelity of the simulator, but both come from the same video pretraining, which is part of why the roles in figure 8.1 keep converging on the same few model families.
+</Callout>
+
+## In code
+
+The crate's world is one dimension wide, which is what makes the failure easy to see. The true task, the model and the logged data fit in a few lines.
+
+<RustSnippet file="ch08-simulators/src/lib.rs" region="world" caption="The pushing task, a learned world model, and the logged data it learns from" />
+
+## Exercises
+
+The stubs are in `rust/ch08-simulators/src/exercises.rs`.
+
+<Exercise n="8.1" title="Fit the world model" crate="ch08-simulators" test="ex8_1"
+  hints={["Ordinary least squares: slope = Σ(x−x̄)(y−ȳ) / Σ(x−x̄)², intercept = ȳ − slope·x̄.", "The edge needs both kinds of evidence: a push that stayed on and a push that fell."]}>
+  Implement `fit_world_model`. Then explain why the fitted line is accurate on the logged pushes and too low beyond them, and what kind of model would extrapolate better here. Would it help in general?
+</Exercise>
+
+<Exercise n="8.2" title="Train in imagination" crate="ch08-simulators" test="ex8_2"
+  hints={["Clamp each candidate to [0, trust] before evaluating it.", "Only move when a candidate is strictly better than staying."]}>
+  Implement `optimize`, a greedy search over push strength inside the model. The tests check that it finds a push the model loves and the world punishes. Change the trust bound and the logged range, and find the smallest logged range for which the unconstrained policy succeeds.
+</Exercise>
+
+<Exercise n="8.3" title="Check executability" crate="ch08-simulators" test="ex8_3"
+  hints={["Velocities are differences of positions divided by dt; accelerations are differences of velocities divided by dt.", "Count speed and acceleration violations separately, then add them."]}>
+  Implement `violations`. Then propose one more check a real executability reward should include for a robot arm, and say what data you would need to calibrate it.
+</Exercise>
+
+<NotSure>
+
+**How much synthetic data is worth.** The most-quoted numbers, NVIDIA's 40 percent improvement and the survey's "40 percent synthetic matches 100 percent real", are respectively a vendor claim on its own model and a survey without named sources. Controlled, independent studies of the exchange rate between synthetic and real data are still missing.
+
+**Whether evaluation in a world model can be trusted.** The Interactive World Simulator reports strong correlation with real-world success on its tasks; WorldArena shows that visual quality is a poor proxy for usefulness. Which of these generalises is not yet known.
+
+**Whether RL in imagination scales.** Every imagination-RL result in this chapter is on a modest set of tasks. The literature names the obstacles: model bias, compounding error, sparse rewards and multi-view inconsistency. None has been shown to disappear with scale.
+
+</NotSure>
+
+## Further reading
+
+- DreamGen, the clearest description of the synthetic-data recipe <Cite k="dreamgen" />.
+- Cosmos-Predict2.5 and Cosmos-Transfer2.5, the open foundation for most of this chapter <Cite k="cosmos-predict25" />.
+- DreamerV3, for the idea of learning in imagination, before robots and video <Cite k="dreamerv3" />.
+- World-VLA-Loop, for closing the loop between world model and policy <Cite k="world-vla-loop" />.
+- WorldArena, for evaluating world models by what they are for <Cite k="worldarena" />.
+- EVA, for the executability gap <Cite k="eva" />.
+- Interactive World Simulator, for policy evaluation in a learned model <Cite k="iws" />.

@@ -1,0 +1,21 @@
+.wide { max-width: 100% !important; margin: 1.5rem 0 1.25rem; }
+.famList { list-style: none; padding: 0; margin: 0 0 1.5rem; display: grid; gap: 2px; }
+.famList li { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: baseline; margin: 0; padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 0.93rem; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--fam); transform: translateY(-1px); }
+.predicts { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+
+.split { display: grid; grid-template-columns: 1.4fr 1fr; gap: 0; margin: 1.25rem 0 1.5rem; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.split > div { padding: 18px 24px 8px 0; }
+.split > div + div { padding-left: 24px; border-left: 1px solid var(--rule); }
+.split :global(.kicker) { margin: 0 0 10px; }
+.steps { padding-left: 1.2em; font-size: 0.95rem; }
+.steps li::marker { color: var(--accent-ink); font-family: var(--font-mono); font-size: 0.8em; }
+.levels { list-style: none; padding: 0; font-size: 0.9rem; line-height: 1.55; }
+.levels li { margin: 0 0 10px; color: var(--ink-2); }
+.levels code { margin-right: 6px; }
+.cmd { margin: 0.5rem 0 1.2rem; padding: 0.7rem 1rem; background: var(--code-bg); border: 1px solid var(--rule); border-radius: var(--radius-m); font-family: var(--font-code); font-size: 0.82rem; overflow-x: auto; }
+
+@media (max-width: 760px) {
+  .split { grid-template-columns: 1fr; }
+  .split > div + div { padding-left: 0; border-left: 0; border-top: 1px solid var(--rule); }
+}

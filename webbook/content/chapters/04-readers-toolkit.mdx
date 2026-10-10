@@ -1,0 +1,194 @@
+import { ChunkingSim } from "@/components/viz/ChunkingSim";
+import { TokensVsDenoising } from "@/components/viz/TokensVsDenoising";
+import { FourComponents } from "@/components/viz/FourComponents";
+
+{/* Chapter 4. Brief: Book.md section 4, chapter 4. Last checked 3 October 2026. L2: equations with a walkthrough.
+    Notation follows the WAM survey (Lu et al. 2026, arXiv 2609.16074, sections II and III). */}
+
+<Figure
+  id="4.1"
+  takeaway="Eight symbols carry the whole book: what the robot sees, is told and does, now and in the future, and the compact codes in between."
+  caption="The notation card. Every later chapter uses these symbols with these meanings."
+  source="notation of Lu et al. 2026 (arXiv 2609.16074), section II."
+>
+
+| Symbol | Read it as | Example |
+|---|---|---|
+| $o_t$ | the observation at time $t$ | camera images plus joint angles |
+| $o_{<t}$ | everything observed before $t$ | the last few frames |
+| $\ell$ | the instruction | "put the cup in the sink" |
+| $a_t$ | the action at time $t$ | target joint positions for one control step |
+| $a_{t:t+H}$ | an action chunk of $H$ steps | the next half-second of motion |
+| $z_t$ | a latent state: a compact summary of the world | a vector inside the model |
+| $u_t$ | a latent action: an action-like code inferred from video | what changed between two frames |
+| $\hat{\ }$ | a hat marks a prediction | $\hat o_{t+1}$, the predicted next frame |
+
+</Figure>
+
+## Why this chapter exists
+
+This is the one chapter with real notation. Everything later refers back to it: when chapter 6 says a model "predicts futures and actions jointly" or chapter 7 says it "infers a latent action", the symbols and pictures for those phrases are here. It is kept short and operational. Every equation sits next to a picture or a simulation of the same idea, and nothing requires more than undergraduate probability.
+
+The notation is borrowed from the WAM survey, so that a reader who finishes this book can read the 2026 papers directly <Cite k="lu2026-wam-survey" />.
+
+After this chapter you will be able to:
+
+- read a policy, a world model and a latent action written in the survey's notation, and draw each;
+- explain why action chunking helps, using the simulation in figure 4.2, including a 2026 result that overturns the usual explanation;
+- explain the difference between emitting actions as tokens and generating them by denoising, and why it matters when there are two right answers.
+
+<Quote
+  who="Tony Z. Zhao, Vikash Kumar, Sergey Levine and Chelsea Finn"
+  role="authors of the ACT paper"
+  source="Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware (arXiv 2304.13705)"
+  href="https://arxiv.org/abs/2304.13705"
+  date="23 April 2023"
+>
+  To address these challenges, we develop a simple yet novel algorithm, Action Chunking with Transformers (ACT), which learns a generative model over action sequences.
+</Quote>
+
+## The setting
+
+A robot acts in a world it only partly observes. The survey formalises this as a partially observable decision process; for this book the vocabulary matters more than the theory <Cite k="lu2026-wam-survey" />. Figure 4.1 is the vocabulary: every symbol the rest of the book uses.
+
+## A policy, and why it predicts chunks
+
+A **policy** maps what the robot has seen and been told to what it should do. Robot foundation models almost always predict a chunk of $H$ actions at once:
+
+$$
+a_{t:t+H} = f(o_{<t}, \ell)
+$$
+
+Read it left to right: the next $H$ actions are a function of the observation history and the instruction. The robot executes the chunk open loop, without looking again, then calls the model for the next one. ACT introduced chunking for robot imitation <Cite k="act-aloha" />, and nearly every model in this book uses it.
+
+Chunking has an obvious cost: during the chunk the robot is blind, so a long chunk reacts late to anything unexpected. Its obvious benefit is amortising a slow model over many control steps, which chapter 2 showed. Figure 4.2 shows both at once. A robot tracks a moving target; each inference takes a few control steps; each chunk extends the model's prediction, which gets slightly worse the further ahead it reaches.
+
+<Figure
+  id="4.2"
+  takeaway="With a slow model there is a best chunk length: short chunks waste time thinking, long ones drift; thinking while moving beats both."
+  caption="Top: the target (dashed) and the robot (solid) over 240 steps; shaded steps are inference. Bottom: mean tracking error against chunk length at the current latency, for both execution modes. Change the chunk length and latency."
+  source="rust/ch04-toolkit, tracking_error; the same model runs in the page."
+  toy
+>
+  <ChunkingSim />
+</Figure>
+
+With five steps of latency and the robot stopping to think, the error is lowest around a dozen actions per chunk; at one action per chunk the robot spends most of its time frozen, and at forty it drifts. Thinking while moving cuts the best error by more than half and shifts the sweet spot to shorter chunks. Real-time chunking brings exactly this to flow-based models by generating the next chunk during execution while freezing the actions already committed <Cite k="real-time-chunking" />.
+
+A careful 2026 study adds a twist. Testing the usual explanations for why chunking helps imitation, temporal consistency, a shorter effective horizon and better representations, it finds that none of them accounts for the gains. What does is greater non-Markovian expressivity and less compounding error, much of which a policy that acts on observations a few steps old also captures, plus an "implicit ensembling" benefit specific to chunks <Cite k="why-action-chunking" />. The toy above shows the deployment side of chunking; that study is the one to read on the learning side.
+
+<RustSnippet file="ch04-toolkit/src/lib.rs" region="chunking" caption="The chunking model behind figure 4.2" />
+
+## Two ways to emit actions
+
+A model has to turn its internal representation into numbers a motor can use. There are two families of answer.
+
+**Tokens.** Discretise each action dimension into bins and let a language-model backbone predict the bin index, as it predicts words. RT-2 discretises each continuous dimension uniformly into 256 bins <Cite k="rt-2" />; OpenVLA does the same <Cite k="openvla" />. With $N$ bins over a range $[lo, hi]$, a value is replaced by its bin's centre, so the rounding error is at most half a bin:
+
+$$
+\left| a - \mathrm{decode}(\mathrm{encode}(a)) \right| \le \frac{hi - lo}{2N}
+$$
+
+Tokens fit the backbone's native training objective and make the model easy to fine-tune, at the price of quantisation and of predicting many tokens one by one. FAST compresses an action chunk with the discrete cosine transform before tokenising, so the model emits far fewer tokens <Cite k="fast-tokenizer" />. In 2026 the tokenizer itself became a research subject: ActionCodec derives design principles from what helps the model learn rather than only reconstruction error <Cite k="actioncodec" />, and ActionPiece argues that a good tokenizer must preserve which actions are physically close to which, not only reconstruct each one <Cite k="actionpiece" />. A survey organises vision-language-action models entirely by the kind of action token they use <Cite k="action-tokenization-survey" />.
+
+**Denoising.** Start from noise and refine it into an action chunk over $K$ steps. Diffusion Policy introduced this for robots, representing the policy as a conditional denoising process <Cite k="diffusion-policy" />; π0 uses flow matching, a close relative, in a separate action expert attached to the VLM <Cite k="pi0" />. Operationally: noise goes in, an action chunk comes out, in $K$ steps. Flow matching trains a network $v$ to predict, at each point $x_\tau$ on a straight path from noise $\epsilon$ to a clean action $a$,
+
+$$
+x_\tau = (1 - \tau)\,\epsilon + \tau\, a, \qquad v(x_\tau, \tau) \approx a - \epsilon
+$$
+
+and sampling follows the predicted direction in $K$ small steps, $x \leftarrow x + \tfrac{1}{K}\, v(x, \tau)$. The survey writes the same interpolation as its equation 9 <Cite k="lu2026-wam-survey" />.
+
+Why bother? Because real tasks often have more than one right answer. To get around an obstacle you can go left or right; going straight is the one wrong choice. A model trained to minimise squared error predicts the average of the demonstrations, which is straight into the obstacle. Denoising with enough steps keeps the two answers apart. Figure 4.3 makes the point with the exact flow for a two-way choice.
+
+<Figure
+  id="4.3"
+  takeaway="Tokens trade precision for compatibility with language models; denoising keeps several valid actions apart, if given enough steps."
+  caption="Left: a smooth action trajectory (dashed) and its tokenised version (solid); change the number of bins. Right: 600 actions sampled from noise by the exact flow to a two-way choice at -1 and +1; change the number of denoising steps K and watch one step collapse onto the average."
+  source="rust/ch04-toolkit (Binning, TwoModes); the velocity field is computed in closed form, not learned."
+  toy
+>
+  <TokensVsDenoising />
+</Figure>
+
+With one step every sample lands near zero: the average, the action that hits the obstacle. With a handful of steps the samples split toward the two modes, and with many they settle on them. This is why few-step generation, which chapter 15 needs for speed, must be engineered carefully rather than simply turned down.
+
+<RustSnippet file="ch04-toolkit/src/lib.rs" region="flow" caption="The exact velocity field for a two-way choice" />
+
+## A world model
+
+A **world model** predicts how the world changes when the robot acts:
+
+$$
+\hat z_{t+1} = f(z_t, a_t)
+$$
+
+Read it as: given a summary of the world now and an action, predict the summary after the action. **Explicit** world models decode the prediction back to pixels, so you can watch what they imagine; **implicit** ones keep it in latent space and are trained to be useful rather than to look right <Cite k="lu2026-wam-survey" />. PlaNet and Dreamer are the classic latent world models of chapter 3 <Cite k="planet,dreamer" />; the video generators of chapter 6 are explicit ones at enormous scale; the JEPA models of chapter 7 are implicit ones at scale.
+
+## A latent action
+
+Most video has no action labels. A **latent action** recovers an action-like signal from the video itself: infer a code $u_t$ from two consecutive frames, then train a forward model to predict the second frame from the first and the code <Cite k="lapa" />:
+
+$$
+u_t \sim q(u_t \mid z_t, z_{t+1}), \qquad \hat z_{t+1} = F(z_t, u_t)
+$$
+
+Read it as: whatever must have happened between these two frames is, by definition, the latent action. The code is only useful if it is small, so that it cannot simply copy the next frame. Trained on human video, it gives a robot-independent description of motion that a small robot-specific decoder can later map to motor commands. That is how chapter 7's models use the internet's largest data layer.
+
+## Four components, two paradigms, two architectures
+
+The 2026 surveys compare architectures with four conditional distributions, and every family in Part II is described as which of the four it trains and which it runs at inference <Cite k="lu2026-wam-survey,uwm" />:
+
+$$
+\begin{aligned}
+\text{policy:}\ & p(a_{t:t+H} \mid o_{<t}, \ell) & \text{forward dynamics:}\ & p(o_{t:t+H} \mid o_{<t}, a_{t:t+H}) \\
+\text{inverse dynamics:}\ & p(a_{t:t+H} \mid o_{<t}, o_{t:t+H}) & \text{visual planning:}\ & p(o_{t:t+H} \mid o_{<t}, \ell)
+\end{aligned}
+$$
+
+<Figure
+  id="4.4"
+  takeaway="Four arrows between past, future and action describe every family: which ones a model learns, and which it still runs at inference."
+  caption="The four components as arrows. Choose a style and a phase; inference steps light up in the order they run. Part II chapters each fill in this template for their family."
+  source="after Lu et al. 2026 (arXiv 2609.16074), equations 10 to 15."
+>
+  <FourComponents />
+</Figure>
+
+Two **transition paradigms** combine them. Joint prediction generates observations and actions together; inverse dynamics imagines the future first and then infers the actions that produce it. Two **architecture patterns** carry them. End-to-end models use one backbone for everything; dual systems separate a world module from an action module and connect them by cross-attention or by mixture-of-transformers routing, where each modality keeps its own weights but they share attention. Chapter 6 fills in the resulting two-by-two with eighteen models.
+
+## Exercises
+
+The stubs are in `rust/ch04-toolkit/src/exercises.rs`.
+
+<Exercise n="4.1" title="Tokens" crate="ch04-toolkit" test="ex4_1"
+  hints={["Clamp first, then scale the value to [0, bins) and truncate; clamp the index to bins - 1 for the top edge.", "The decoded value is the bin's centre, half a bin above its lower edge."]}>
+  Implement `encode` and `decode` for uniform binning, and check the half-bin error bound for 256 bins. Then use figure 4.3 to find how many bins it takes before the tokenised trajectory is visually indistinguishable from the smooth one.
+</Exercise>
+
+<Exercise n="4.2" title="Denoising" crate="ch04-toolkit" test="ex4_2"
+  hints={["Time runs from 0 to 1 in K equal steps; use the time at the start of each step."]}>
+  Implement `sample`: integrate the flow's velocity with K Euler steps. With 64 steps, noise slightly right of zero should end near the right-hand mode.
+</Exercise>
+
+<Exercise n="4.3" title="The regression trap" crate="ch04-toolkit" test="ex4_3">
+  Implement `fraction_near_modes` and measure it for one step and for 32. Then explain, in two sentences, why a policy trained with mean squared error drives into the obstacle and a denoising policy does not.
+</Exercise>
+
+<NotSure>
+
+**Notation is not universal.** This chapter follows the WAM survey. The π-series and GR00T papers write the same objects with different symbols, and some papers call a chunk a "trajectory" or a "plan". Appendix B will give the crosswalk.
+
+**Why chunking works is still being argued.** The 2026 study cited above overturns the textbook explanations for imitation learning, but it is one study, and the deployment benefit shown in figure 4.2 is a separate effect from the learning benefit it measures.
+
+**Tokens versus denoising is not settled.** Better tokenizers keep closing the gap in precision, and hybrid models train with tokens and act with a denoising head. The two-way choice in figure 4.3 is the clearest case for denoising; on many real tasks the difference is smaller.
+
+</NotSure>
+
+## Further reading
+
+- The WAM survey, sections II and III, whose notation this chapter uses <Cite k="lu2026-wam-survey" />.
+- The concise tutorial from world models to world-action models <Cite k="wm-to-wam-tutorial-2026" />.
+- ACT for chunking, and the 2026 study of why it works <Cite k="act-aloha,why-action-chunking" />.
+- Diffusion Policy and π0 for denoising action heads <Cite k="diffusion-policy,pi0" />.
+- FAST and the action-tokenization survey for the token side <Cite k="fast-tokenizer,action-tokenization-survey" />.

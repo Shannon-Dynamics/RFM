@@ -1,0 +1,171 @@
+import { DataPyramid } from "@/content/ch02/figures";
+import { HourCards } from "@/content/ch13/figures";
+import { DatasetSizes } from "@/components/viz/DatasetSizes";
+import { ScalingCurves } from "@/components/viz/ScalingCurves";
+import { MixtureMix } from "@/components/viz/MixtureMix";
+
+{/* Chapter 13. Brief: Book.md section 4, chapter 13. Last checked 9 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="13.1"
+  takeaway="Most of what separates the families is which layer of this pyramid they can learn from."
+  caption="The data pyramid from chapter 2, repeated because this chapter is about it. Select a layer for its datasets, their reported sizes and the families that can use it."
+  source="sizes from each dataset's paper; EgoScale and Dyna-2 sizes are vendor claims. Same figure as 2.2."
+>
+  <DataPyramid />
+</Figure>
+
+## Why this chapter exists
+
+Each family in Part II was defined by what it predicts. Each was limited by what it can learn from. Reactive VLAs need action-labelled robot data, the smallest and most expensive layer of the pyramid. World-action and latent models can learn from human video because they predict futures, or infer actions, instead of needing them. World models used as simulators can turn the largest layer, internet video, into a dynamics prior. Most of the pros and cons in chapters 5 to 11 trace back to this one fact.
+
+This chapter treats data as engineering. How big are the datasets, really, and what does an "hour" of each contain? What is actually established about scaling, and what is a curve drawn through a few points? How do you mix sources that differ in size by a factor of a thousand? And why are reported hours so hard to compare?
+
+After this chapter you will be able to:
+
+- place a dataset on the pyramid of figure 13.1 and say which families can use it directly;
+- read a scaling claim critically, using figure 13.3 to see why a few points cannot fix the shape of a curve;
+- explain why an hour of teleoperation, an hour of human video and an hour of generated data are not the same unit, and how training mixtures cope.
+
+<Quote
+  who="Peter Chen"
+  role="chief executive officer and co-founder of Covariant"
+  source="Covariant introduces RFM-1 to give robots the human-like ability to reason, Covariant announcement"
+  href="http://web.archive.org/web/20240314053559/https://covariant.ai/covariant-introduces-rfm-1-to-give-robots-the-human-like-ability-to-reason/"
+  date="11 March 2024"
+>
+  Unlike AI for the digital world, there is no internet to scrape for large-scale robot interaction data with the physical world.
+</Quote>
+
+## The three layers, in numbers
+
+The pyramid has three layers. At the top are **embodiment-specific trajectories**: robot data with the actions that produced it. Open X-Embodiment pooled more than one million of them from 22 robot types, DROID collected 76,000 trajectories (350 hours) in the wild, and BridgeData V2 60,096 on a low-cost arm <Cite k="open-x-embodiment,droid,bridgedata-v2" />. In the middle is **task-relevant human activity**: egocentric video of people using their hands, sometimes with tracked hand poses, such as Ego4D, EgoDex, EgoScale and UMI's hand-held gripper data <Cite k="ego4d,egodex,egoscale,umi" />. At the base is **task-agnostic internet video**, which carries no actions and no task structure but shows how the world moves <Cite k="cosmos-wfm,v-jepa-2" />.
+
+Figure 13.2 puts the reported sizes on one axis. The axis is logarithmic because the sizes span five orders of magnitude, from DROID's 350 hours to the roughly 20 million hours of raw video behind Cosmos.
+
+<Figure
+  id="13.2"
+  takeaway="Robot data is measured in hundreds or thousands of hours, human data in tens of thousands to a million, internet video in millions; the largest human-data numbers are vendor claims."
+  caption="Reported dataset sizes in hours, grouped by layer, on a log scale. Hollow markers are a company's claims about its own data. Select a dataset for what its hours contain and the source."
+  source="each dataset's paper or announcement, as listed per dataset; numbers as stated, not normalised."
+>
+  <DatasetSizes />
+</Figure>
+
+Two things stand out. First, the robot layer has grown, but slowly. TRI's LBM study used about 1,700 hours <Cite k="tri-lbm" />, and LingBot-VLA 2.0's 50,000 hours of robot trajectories across 20 configurations is the largest robot-data figure in this book's sources <Cite k="lingbot-vla-2" />. Second, the human layer has grown fast, and mostly in company reports. GEN-0 describes 270,000 hours growing by 10,000 a week<Claim /> <Cite k="gen0" />, GEN-1 half a million hours from wearable devices<Claim /> <Cite k="gen1" />, and Dyna-2 more than a million<Claim /> <Cite k="dyna-2" />. NVIDIA attributes GR00T N1.7's improved generalisation and language following to adding 20,000 hours of EgoScale human video to pretraining<Claim /> <Cite k="gr00t-n17-isaac-gr00t-repo" />.
+
+## Scaling: what is established
+
+The strongest public evidence that more human data makes better robots is EgoScale. It trained a VLA on 20,854 hours of action-labelled egocentric video and reports two curves <Cite k="egoscale" />. The first is offline: validation loss on held-out human data falls along a log-linear law with $R^2 = 0.9983$. The second is what matters, robot performance after post-training. Average task completion rises from 0.30 at 1,000 hours to 0.71 at 20,000 hours, through five measured points, "with no signs of saturation in the explored regime" <Cite k="egoscale" />.
+
+A log-linear law says each doubling of data adds the same amount:
+
+$$
+\boxed{y = a + b \ln(\text{hours})}
+$$
+
+where $a$ and $b$ are fitted to the points. It is the natural first model, and EgoScale's loss fits it almost perfectly. The danger is in reading a law into the completion curve beyond its points. Figure 13.3 fits two different curves to the same five completion values.
+
+<Figure
+  id="13.3"
+  takeaway="Two different curves fit EgoScale's five points about equally well and disagree completely beyond them; a scaling curve says nothing outside its measured range."
+  caption="EgoScale's average task completion at five data scales, with a log-linear fit and a power-law fit. Drag the slider to extrapolate, and compare with the data scales other companies now report."
+  source="points from Zheng et al. 2026 (arXiv 2602.16710), figure 5 (vendor claim); fits in rust/ch13-data; GEN-0 and Dyna-2 scales from their makers' reports."
+>
+  <ScalingCurves />
+</Figure>
+
+Inside the measured range the two fits are nearly indistinguishable, each missing the points by about three points of completion. At 100,000 hours, the log-linear curve predicts about 89 percent completion and the power law about 108 percent, which is impossible. At GEN-0's 270,000 hours both are above 100 percent. No curve through a handful of points can say how robot performance behaves at ten or fifty times the data, and every real curve must bend before the ceiling. What the scaling evidence establishes is narrower and still important: within the explored range, more human data helped steadily, and the offline validation loss tracked real-robot performance <Cite k="egoscale" />. GEN-0 adds a different kind of claim, a "phase transition" at 7 billion parameters below which models stop improving with more data<Claim /> <Cite k="gen0" />. Dyna-2 claims a scaling law that transfers from human to robot data<Claim /> <Cite k="dyna-2" />. Neither has been independently reproduced in this book's sources.
+
+<Callout kind="key-paper" title="EgoScale (NVIDIA, February 2026)">
+EgoScale is worth reading for its method more than its headline. It varies one thing, hours of human pretraining data, from 1,000 to 20,000, and measures both an offline loss and real-robot task completion after the same post-training. It shows smaller datasets overfitting during pretraining, and argues that the offline loss can stand in for expensive robot evaluation <Cite k="egoscale" />. The limits are those of any single-lab study: one model family, one set of robots and tasks, and an upper end of 20,000 hours. Exercise 13.3 explores what the curve does and does not imply.
+</Callout>
+
+## Synthetic data
+
+Chapter 8 covered the machinery: world models that rewrite appearance, generate new demonstrations and label them with inverse dynamics. For this chapter the question is accounting. NVIDIA reports generating 780,000 synthetic trajectories, which it equates to 6,500 hours of human demonstration, in 11 hours, and improving GR00T N1 by 40 percent when mixing them with real data<Claim /> <Cite k="nvidia-pr-gr00t-n1" />. One industry survey reports that VLAs trained on 40 percent synthetic data matched policies trained on 100 percent real data, citing unnamed CMU and Stanford teams<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />. The book has not found the primary papers, and treats the figure as reported, not established.
+
+## Beyond RGB
+
+Most datasets in figure 13.2 are camera video, sometimes with robot joint angles (proprioception) and language. The other modalities buy specific things. Multiple views and depth reduce occlusion and give metric distances: every DROID episode has three cameras, calibration and depth <Cite k="droid" />. 3D point flows let one model learn across bodies <Cite k="pointworld" />. Touch tells a model about contact that cameras cannot see, the subject of chapter 9's figure 9.2 <Cite k="vt-wm" />. Sound tells it what is happening inside a bottle being filled <Cite k="audio-wm" />. Human motion capture gives a whole-body controller its prior <Cite k="sonic" />. Each of these is rare compared with video, which is why the families that rely on them (chapter 9) have the least pretraining data.
+
+## An hour is not an hour
+
+Data sizes are reported in hours because hours are easy to count. They are a poor common currency. Figure 13.4 shows what one hour of four kinds of data contains.
+
+<Figure
+  id="13.4"
+  takeaway="An hour of teleoperation, an hour of tracked human video, an hour of generated trajectories and an hour of internet video differ in episodes, in whether they carry executable actions, and in cost by orders of magnitude."
+  caption="What one reported hour contains for four kinds of data, computed from each source's own totals."
+  source="DROID (arXiv 2403.12945); EgoDex (2505.11709); NVIDIA press release, 18 March 2025 (vendor claim); Cosmos (2501.03575); teleoperation cost from SVRC, State of Robotics 2026 (industry survey)."
+>
+  <HourCards />
+</Figure>
+
+Three differences matter. **Density**: an hour of EgoDex holds about twice as many demonstrations as an hour of DROID, because human demonstrations are shorter. **Executability**: only teleoperation and faithful generated data carry actions a robot can run directly. Human data needs mapping, through hand poses, latent actions or a learned retargeting. **Cost**: an hour of teleoperation cost about $118 to collect in 2026 according to one industry survey<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />, while NVIDIA's reported generation rate is about six seconds of compute per "hour". When two models are compared by "hours of pretraining data", none of these differences is visible.
+
+## Mixing sources
+
+A training run draws samples from all its sources at once, and has to decide how often to draw from each. The common answer is temperature sampling: give each dataset a share proportional to its size raised to a power $\alpha$,
+
+$$
+\boxed{w_i \propto \text{hours}_i^{\,\alpha}}
+$$
+
+With $\alpha = 1$ every hour is equally likely to be drawn, so the largest dataset dominates. With $\alpha = 0$ every dataset gets the same share, so the smallest is repeated many times. Figure 13.5 shows the trade-off on a mixture built from sizes in this chapter.
+
+<Figure
+  id="13.5"
+  takeaway="Sampling in proportion to size drowns the small, robot-specific datasets; sampling uniformly repeats them until they overfit. The temperature sets where between the two a mixture sits."
+  caption="A five-source mixture: two teleoperation datasets, tracked human video, generated trajectories and action-labelled human video. Change the sampling temperature and watch each source's share and how often it is repeated."
+  source="sizes from figure 13.2; temperature sampling as implemented in rust/ch13-data."
+  toy
+>
+  <MixtureMix />
+</Figure>
+
+The robot-specific datasets are the smallest and the ones a robot most needs. Proportional sampling gives DROID about 1 percent of the samples. Uniform sampling shows it more than 16 times in one pass, long past the point where EgoScale saw small datasets overfit <Cite k="egoscale" />. In this mixture, $\alpha$ of 0.55 is the smallest temperature that keeps every source below five repetitions. Exercise 13.2 finds it.
+
+## In code
+
+The scaling-curve half of the crate is short: the five reported points and the two shapes of curve.
+
+<RustSnippet file="ch13-data/src/lib.rs" region="curves" caption="EgoScale's reported points and two models of a scaling curve" />
+
+## Exercises
+
+The stubs are in `rust/ch13-data/src/exercises.rs`.
+
+<Exercise n="13.1" title="Temperature sampling" crate="ch13-data" test="ex13_1"
+  hints={["Raise each size to the power alpha, then divide by the sum.", "Check the two ends: alpha 0 and alpha 1."]}>
+  Implement `mixture_weights`. Then say which value of alpha you would start from for a VLA that must work on one specific robot, and why.
+</Exercise>
+
+<Exercise n="13.2" title="How often is the smallest dataset repeated?" crate="ch13-data" test="ex13_2"
+  hints={["Repetitions of a dataset are the budget times its weight divided by its size.", "Search alpha from 0 upwards in steps of 0.05 and stop at the first that meets the limit."]}>
+  Implement `max_epochs` and `alpha_for`. Then double the training budget and find the new alpha. What does the answer imply for a lab that can afford to train much longer than its robot data justifies?
+</Exercise>
+
+<Exercise n="13.3" title="The other curve" crate="ch13-data" test="ex13_3"
+  hints={["Take logarithms of both coordinates and fit a straight line.", "The intercept of that line is the log of c."]}>
+  Implement `fit_power_law`. Then find the data scale at which each fitted curve first predicts 100 percent completion, and write two sentences a vendor could honestly put under a scaling plot.
+</Exercise>
+
+<NotSure>
+
+**Whether human-data scaling holds across labs.** EgoScale, GEN-0 and Dyna-2 all report that more human data keeps helping, each measured by its makers on their own robots. Independent replication at comparable scale is missing from this book's sources.
+
+**What an hour should be replaced by.** Hours hide density, executability and cost. Episodes, frames or action-labelled transitions each fix one problem and create another. The field has no agreed unit, so comparisons of data scale across papers remain rough.
+
+**How much synthetic data is worth.** The vendor's 40 percent improvement and the survey's 40 percent equivalence are the most quoted numbers, and neither has a public, controlled study behind it that this book could find.
+
+</NotSure>
+
+## Further reading
+
+- EgoScale, the clearest public scaling study for human data <Cite k="egoscale" />.
+- Open X-Embodiment, for how pooling robot data became normal <Cite k="open-x-embodiment" />.
+- DROID, for what a well-documented robot dataset looks like <Cite k="droid" />.
+- EgoDex, for human video collected with robot learning in mind <Cite k="egodex" />.
+- TRI's careful examination of LBMs, for pretraining mixtures and their effect measured carefully <Cite k="tri-lbm" />.
+- The WAM survey's section on data <Cite k="lu2026-wam-survey" />.

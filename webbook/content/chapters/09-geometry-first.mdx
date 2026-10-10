@@ -1,0 +1,176 @@
+import { RepresentationLadder } from "@/components/viz/RepresentationLadder";
+import { WhatRgbMisses } from "@/components/viz/WhatRgbMisses";
+import { ChamferPlay } from "@/components/viz/ChamferPlay";
+import { GeometryMatrix, GeometryFourComponents } from "@/content/ch09/figures";
+
+{/* Chapter 9. Brief: Book.md section 4, chapter 9. Last checked 3 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="9.1"
+  takeaway="Every representation makes some things explicit and throws others away; geometry-first models choose to make shape, position and contact explicit, at the price of the web-scale pretraining that pixels enjoy."
+  caption="One scene, a mug and a cloth draped over a box, seen from a camera at the top left. Choose a representation to see the scene in it, and what it keeps and loses."
+  source="representations and examples from the papers cited in this chapter; scene drawn by this book."
+  schematic
+>
+  <RepresentationLadder />
+</Figure>
+
+## Why this chapter exists
+
+Chapters 6 to 8 predicted the future as video or as features learned from video. That choice inherits something valuable, the billions of hours of video on the web, and something awkward. A video frame is a picture of the world, not the world. It does not say how far away the mug is, whether the cloth is touching the box, or how hard the peg is pressing on the rim of the hole. For many tasks the picture is enough. For contact-rich manipulation it often is not, because the variables control depends on are exactly the ones a camera reports worst.
+
+Geometry-first models predict in an explicit spatial or physical representation instead: point clouds, Gaussian splats, particles, occupancy grids, and in some cases touch or sound. They give up web-scale pretraining in exchange for states a physicist would recognise, predictions that can be checked against a ruler, and simulation that does not need to render a single image.
+
+After this chapter you will be able to:
+
+- name the main geometric representations, and say with figure 9.1 what each makes explicit and what it loses;
+- explain with figure 9.2 why an RGB rollout can be underspecified for contact, using a concrete pixel-size argument;
+- score a predicted point cloud with chamfer distance and voxel IoU, and say why a point-by-point loss would be wrong.
+
+<Quote
+  who="Marco Hutter"
+  role="professor at ETH Zurich's Robotic Systems Lab"
+  source="NVIDIA Announces NVIDIA Isaac GR00T Reference Humanoid Robot for Academic Research, NVIDIA Newsroom"
+  href="https://nvidianews.nvidia.com/news/nvidia-open-humanoid-robot-reference-design"
+  date="31 May 2026"
+>
+  ETH Zurich's robotics research aims to advance machines that can move, perceive and manipulate reliably in the real world.
+</Quote>
+
+## The mechanism
+
+A geometry-first world model is a forward dynamics model whose state is geometry. Write the scene as a set of points $P_t$, each a 3D position, possibly with a colour or material label. The model predicts how that set moves under an action:
+
+$$
+\boxed{\hat P_{t+1} = W(P_t,\ a_t)}
+$$
+
+The same line covers Gaussians (each element has a position, a shape and a colour), particles (each element is a lump of material, joined to its neighbours) and occupancy grids (each element is a filled cell of space). What they share is that the state is a list of things in space, not a grid of colours. A prediction can then be checked with geometry: is the mug where the model said it would be, to the millimetre?
+
+That shift has a practical consequence for the action too. PointWorld represents actions as "3D point flows": the predicted motion of points on the robot's own body, rather than joint angles. That lets a single model learn from a Franka arm and a bimanual humanoid without an embodiment-specific action space <Cite k="pointworld" />.
+
+## What RGB misses
+
+The case for geometry is clearest at contact. Figure 9.2 puts a peg over a hole with a millimetre of clearance and looks at it two ways.
+
+<Figure
+  id="9.2"
+  takeaway="Below the size of a camera pixel, two very different futures look identical; a model predicting in pixels cannot tell them apart, while a model predicting geometry and contact can."
+  caption="A peg above a hole, seen by a camera (left) and by geometry and touch (right). Move the peg off-centre, change the camera's pixel size and the hole's clearance."
+  source="this book's toy, in rust/ch09-geometry; the argument follows the WAM survey (arXiv 2609.16074, section III-E) and VT-WM (2602.06001)."
+  toy
+>
+  <WhatRgbMisses />
+</Figure>
+
+With 2 mm pixels and 1 mm of clearance, every offset between 0.6 and 1.9 mm jams the peg on the rim, and every one of them produces exactly the same camera image as a perfect alignment. Exercise 9.1 counts them. Real cameras are better than 2 mm per pixel at close range, and multiple views help; but contact also happens where the gripper's own fingers hide it, and the quantity that matters, the force on the rim, is not visible at all. A world model trained only on pixels has nothing to learn the difference from.
+
+Visuo-tactile world models make this point with data. VT-WM adds touch to vision and reports 33 percent better object permanence and 29 percent better compliance with the laws of motion in its imagined rollouts, the failure modes being "objects disappearing, teleporting, or moving in ways that violate basic physics" under occlusion. In zero-shot real-robot planning it reports up to 35 percent higher success, with the largest gains on multi-step, contact-rich tasks <Cite k="vt-wm" />. Sound can play the same role where vision is ambiguous: an audio world model predicts the rising pitch of a bottle being filled <Cite k="audio-wm" />.
+
+## The representation ladder
+
+**Point clouds** are the most direct. PointWorld is a large pretrained 3D world model: from one or a few RGB-D images and a sequence of actions, it forecasts per-point 3D displacements. It was trained on about 2 million trajectories and 500 hours of real and simulated manipulation, and runs in real time at 0.1 s per prediction <Cite k="pointworld" />. ParticleFormer is a transformer over point clouds that models rigid, deformable and flexible materials interacting, trained directly on real robot perception data without elaborate scene reconstruction, and used for model predictive control <Cite k="particleformer" />.
+
+**Gaussian splats** represent a scene as many small coloured blobs that can be rendered back into images, so the model can be trained with photographs and still have an explicit 3D state. GWM predicts how Gaussian primitives propagate under robot actions with a latent diffusion transformer, and serves both as a training signal for imitation and as a simulator for model-based RL <Cite k="gwm" />. ManiGaussian++ uses a hierarchical Gaussian world model for two-armed manipulation <Cite k="manigaussian-pp" />. 4DGS-WAM, from August 2026, separates dynamic objects from the static background so that only the objects need to be predicted. Its first experiments are on a driving dataset, KITTI-MOT, a reminder of how early this line is <Cite k="4dgs-wam" />.
+
+**Particles and physics** go furthest towards a simulator. PIN-WM identifies a 3D rigid-body system from visual observations through differentiable physics, learns from a few task-agnostic interactions, and bridges the sim-to-real gap with physics-aware "digital cousins" <Cite k="pin-wm" />. PhysWorld reconstructs a physical world from a generated video and grounds the video's motion in physically accurate actions with residual RL, without collecting real robot data <Cite k="physworld" />.
+
+**Other channels.** Cloth-WM feeds surface normals into a DreamerV2-style world model to unfold cloth in the air, deployed zero-shot on a real robot <Cite k="cloth-wm" />. On the policy side, SpatialVLA injects 3D position information into a VLA pretrained on 1.1 million real robot episodes <Cite k="spatialvla" />, and GeoVLA adds a point-cloud encoder next to the VLM <Cite k="geovla" />. Those two are reactive VLAs with better eyes, not world models, and figure 9.5 places them accordingly.
+
+<Figure
+  id="9.3"
+  takeaway="Most geometry-first models still read RGB; what changes is what they predict, and several use geometry only to shape training."
+  caption="Thirteen models against six representations: whether each model consumes the representation, predicts it, does both, or uses it only as a training signal."
+  source="each model's abstract: SpatialVLA (arXiv 2501.15830), GeoVLA (2508.09071), PIN-WM (2504.16693), ManiGaussian++ (2506.19842), ParticleFormer (2506.23126), GWM (2508.17600), PhysWorld (2511.07416), Audio-WM (2512.08405), PointWorld (2601.03782), VT-WM (2602.06001), Cloth-WM (2602.16675), 4D-WAM (2608.08023), 4DGS-WAM (2608.25956)."
+>
+  <GeometryMatrix />
+</Figure>
+
+## Scoring a geometric prediction
+
+A predicted video is scored pixel by pixel. A predicted point cloud cannot be, because its points come in no particular order: point 17 of the prediction has no reason to correspond to point 17 of the truth. The standard answer is the chamfer distance. For each predicted point, find the nearest real point; for each real point, the nearest predicted one; average both:
+
+$$
+\boxed{\mathrm{CD}(P, Q) = \frac{1}{|P|}\sum_{p \in P} \min_{q \in Q} \lVert p - q \rVert \; + \; \frac{1}{|Q|}\sum_{q \in Q} \min_{p \in P} \lVert q - p \rVert}
+$$
+
+The first term punishes predicted points with nothing real nearby, such as a handle where there is none. The second punishes real points the prediction missed, such as a handle the model forgot. Figure 9.4 lets you see both, and shows what goes wrong with a point-by-point loss once the order is shuffled. ParticleFormer's "hybrid point cloud reconstruction loss" is built from terms of this kind <Cite k="particleformer" />.
+
+<Figure
+  id="9.4"
+  takeaway="Point clouds have no order, so a geometric loss must match each point to its nearest neighbour; chamfer distance does, and a point-by-point error does not."
+  caption="A real mug (hollow) and a predicted one (filled), with a line from each predicted point to its nearest real point. Shift and rotate the prediction, drop its handle, or shuffle its point order."
+  source="this book's toy; chamfer distance and voxel IoU as implemented in rust/ch09-geometry."
+  toy
+>
+  <ChamferPlay />
+</Figure>
+
+Occupancy is the coarse alternative: divide space into cells, mark each cell as filled or empty, and compare the sets with intersection over union. It forgives small errors inside a cell and punishes errors that cross cells, so a 10 mm grid scores a 5 mm shift almost as perfect (an IoU of 0.89 in the crate's mug) and a 10 mm shift as poor (0.25). Exercise 9.3 builds both.
+
+## The family on the four-component template
+
+<Figure
+  id="9.5"
+  takeaway="Geometry can enter at three places: as input to a policy, as the state of a world model, or only as a training signal; only the second makes the family a world model."
+  caption="Chapter 4's template for four styles of geometry-first model. Select a style, and switch between training and inference."
+  source="placements from each paper's abstract, as in figure 9.3."
+>
+  <GeometryFourComponents />
+</Figure>
+
+## Good at, bad at
+
+**Why it exists.** RGB rollouts are underspecified for contact-rich manipulation; geometry exposes the variables control depends on; and simulation without rendering is cheaper.
+
+**What it is good at.** States are physically grounded and interpretable: a predicted point cloud can be measured. Geometry fits naturally with classical physics engines and with structured sensing such as depth cameras, LiDAR and tactile sensors. And it can be fast: PointWorld predicts in 0.1 s <Cite k="pointworld" />.
+
+**What it is bad at.** It loses most of the web-scale pretraining that video and RGB models inherit, because the internet has far less 3D and tactile data than video. It is sensor-specific: a model trained on one depth camera or one tactile skin does not transfer freely. And the research thread is young, with no shared benchmark suite.
+
+<Callout kind="caveat">
+The geometry results in this chapter come from narrow task suites, each paper's own. Unlike reactive VLAs, which share LIBERO, SIMPLER and RoboArena, geometry-first models have no common benchmark, so their numbers cannot be compared with each other or with the other families. This chapter quotes them to show what each model does, not how good it is.
+</Callout>
+
+## In code
+
+The peg-and-camera model behind figure 9.2 is three short methods.
+
+<RustSnippet file="ch09-geometry/src/lib.rs" region="contact" caption="What the camera reports, and what the contact does" />
+
+## Exercises
+
+The stubs are in `rust/ch09-geometry/src/exercises.rs`.
+
+<Exercise n="9.1" title="Jams the camera cannot see" crate="ch09-geometry" test="ex9_1"
+  hints={["Compute the edge pixel of a centred peg once, then compare each offset's edge pixel to it.", "Use the PegInHole methods rather than re-deriving the conditions."]}>
+  Implement `invisible_jams`. Then find, for a 1 mm clearance, the largest pixel size at which no jam is invisible, and explain in two sentences what that says about camera placement for insertion tasks.
+</Exercise>
+
+<Exercise n="9.2" title="Chamfer distance" crate="ch09-geometry" test="ex9_2"
+  hints={["A brute-force nearest-neighbour search is fine at these sizes.", "Compute the mean in each direction separately, then add the two."]}>
+  Implement `chamfer`. The tests check that it ignores point order and penalises a single stray point. Which term of the formula does a missing handle increase, and which does an extra one?
+</Exercise>
+
+<Exercise n="9.3" title="Voxels and IoU" crate="ch09-geometry" test="ex9_3"
+  hints={["Use floor, not truncation, so negative coordinates land in the right cell.", "Intersection over union is the size of the intersection divided by the size of the union."]}>
+  Implement `voxelize` and `iou`. Then compare the IoU of a 5 mm and a 10 mm shift of the mug at cell sizes of 5, 10 and 20 mm, and say which you would use to train a model and which to check a grasp is collision-free.
+</Exercise>
+
+<NotSure>
+
+**Whether geometry needs to be predicted at all.** Several of the strongest results use geometry only as an input (SpatialVLA, GeoVLA) or only as a training signal (4D-WAM). It may be that the best design reads geometry and predicts in a learned latent space, which would fold this family into chapters 5 and 7.
+
+**Whether pretraining can catch up.** The family's biggest handicap is data. PointWorld's 500 hours is large for 3D but tiny next to video. Whether 3D reconstruction of web video can supply the missing scale, as PhysWorld and EnerVerse suggest in different ways, is an open bet <Cite k="physworld,enerverse" />.
+
+**How to compare models.** With no shared benchmark, claims of improvement are relative to each paper's own baselines. A common suite, ideally on real robots with contact-rich tasks, would do more for this family than any single model.
+
+</NotSure>
+
+## Further reading
+
+- PointWorld, the largest pretrained 3D world model so far <Cite k="pointworld" />.
+- ParticleFormer, for multi-material point-cloud dynamics <Cite k="particleformer" />.
+- GWM, for Gaussian world models as simulators <Cite k="gwm" />.
+- PIN-WM, for physics-informed world models and digital cousins <Cite k="pin-wm" />.
+- VT-WM, for what touch adds to imagination <Cite k="vt-wm" />.
+- The WAM survey's section on structured world models <Cite k="lu2026-wam-survey" />.

@@ -1,0 +1,146 @@
+import { SolutionTable } from "@/components/viz/SolutionTable";
+import { SolutionMoves } from "@/components/viz/SolutionMoves";
+import { BestOfN } from "@/components/viz/BestOfN";
+
+{/* Chapter 18. Brief: Book.md section 4, chapter 18. Last checked 9 October 2026. L1: one boxed equation per idea. */}
+
+<Figure
+  id="18.1"
+  takeaway="Latency has established answers; most other problems have only promising or early ones, and evaluation and safety have the fewest."
+  caption="For each of chapter 17's ten problems, the solutions being tried, styled by maturity: dashed for early, outlined for promising, filled for established. Select a solution for who is trying it and which families it would change."
+  source="the authors' assessment as of October 2026, from the papers cited in this chapter and in chapters 5 to 17."
+>
+  <SolutionTable />
+</Figure>
+
+## Why this chapter exists
+
+Chapter 17 listed what is unsolved. This chapter lists what is being tried. For each problem it names the candidate solutions visible in the source base, who is trying them, and an assessment of how far along each is. The assessment uses three levels. **Established** means in shipped models or standard practice, with more than one group reporting it works. **Promising** means demonstrated by more than one group or on real robots, but not yet standard. **Early** means one or two papers, often only in simulation.
+
+"Promising" is a judgement. Each assessment is dated October 2026, and the chapter expects to be revised.
+
+After this chapter you will be able to:
+
+- name, for each open problem, at least one candidate solution and say how mature it is;
+- say which families of figure 1.1 each solution would change, using figure 18.2;
+- explain with figure 18.3 why spending more compute at test time helps only as much as the verifier allows.
+
+<Quote
+  who="Randall Balestriero and Yann LeCun"
+  role="authors of LeJEPA"
+  source="LeJEPA: Provable and Scalable Self-Supervised Learning Without the Heuristics (arXiv 2511.08544)"
+  href="https://arxiv.org/abs/2511.08544"
+  date="11 November 2025"
+>
+  Learning manipulable representations of the world and its dynamics is central to AI.
+</Quote>
+
+## Where the solutions land
+
+Most solutions do not fix a problem in one family; they shift where families sit relative to each other. Video-only-in-training makes world-action models cost what VLAs cost at inference. Latent prediction pulls world-action models towards chapter 7. Explicit 3D state pulls them towards chapter 9. Figure 18.2 draws those moves on the family grid.
+
+<Figure
+  id="18.2"
+  takeaway="Most candidate solutions move a family towards another one: towards cheaper inference, latent targets or explicit geometry. The grid is converging from several sides."
+  caption="Choose a problem to see its candidate solutions and the cells of the family grid each would change."
+  source="the authors' assessment as of October 2026; family grid from chapter 1."
+  schematic
+>
+  <SolutionMoves />
+</Figure>
+
+## Action alignment and factorisation
+
+**Action alignment.** The WAM survey's two recommendations are the main line. The first is staged training, which aligns a pretrained video model's predicted motion to executable actions on embodied data. The second is prior preservation through frozen parameters, alignment layers and residual action heads <Cite k="lu2026-wam-survey" />. Both are promising. Latent action interfaces with small per-robot decoders (chapter 7) are a second promising route <Cite k="lapa,vipra" />, and using an inverse dynamics model as a reward for executability is early <Cite k="eva" />.
+
+**Factorisation.** Training with futures and acting without them is the most visible bet. Fast-WAM keeps video co-training and drops future generation at test time <Cite k="fast-wam" />, and LingBot-VLA 2.0 reaches the same design from the VLA side <Cite k="lingbot-vla-2" />. Privileged Foresight Distillation sharpens the idea. It treats what the future teaches as a correction to the action, measured by a teacher that sees the future, and distils it into a small adapter on a student that never generates video <Cite k="privileged-foresight-distillation" />. Predicting representations instead of pixels, as JEPA-WAM and LaWAM do, is the other promising bet <Cite k="jepa-wam-2608,lawam" />.
+
+## Consistency, memory and neural simulators
+
+**Multi-view consistency.** Explicit 3D state (chapter 9) is the structural answer, and is promising <Cite k="pointworld,gwm" />. A July 2026 paper turns chapter 17's consistency check into a selection rule. It samples several rollouts from a world-action model and keeps the one whose predicted futures agree best across views, measured by depth reprojection with a frozen geometry model <Cite k="wam-test-time-scaling" />. With eight samples it raised RoboCasa success from 66.3 to 68.4 percent with Cosmos Policy, and from 80.8 to 82.5 percent with another backbone. A gate that only samples when the first rollout looks inconsistent kept about three-quarters of that gain while sampling extra at about a quarter of decisions <Cite k="wam-test-time-scaling" />. Those modest gains are what figure 18.3 predicts for an imperfect verifier.
+
+**Memory.** MEM's video-plus-text memory is promising, published by one lab and built into π0.7 <Cite k="pi-mem,pi07" />. The alternative is an agentic harness: a reasoning model that keeps state outside the policy, as Gemini Robotics ER 2 does <Cite k="gemini-robotics-er2" />.
+
+**Neural simulators.** Closing the loop, so the world model is retrained on the policy's own rollouts, is promising <Cite k="world-vla-loop,iws" />. Dense teacher supervision instead of sparse reward <Cite k="wam-opd" /> and unifying search with value learning <Cite k="wm-rl-diffusion-policy-optimization" /> are early.
+
+## Spending compute at test time
+
+A general bet that cuts across problems 3, 5 and 6 is to spend more computation at decision time. Sample several candidate plans, let a verifier check them, and execute one the verifier accepts. The verifier can be a world model imagining each plan's outcome, a geometric consistency check, or a reasoning model judging the plan. If one candidate succeeds with probability $p$, the verifier accepts good plans with probability $a$ and bad ones with probability $b$, and candidates are checked one at a time up to $N$, then the chance of success is
+
+$$
+\boxed{P_N = \big(1-(1-q)^N\big)\,\frac{p\,a}{q} \;+\; (1-q)^N\,\frac{p\,(1-a)}{1-q}, \qquad q = p\,a + (1-p)\,b}
+$$
+
+Read it from the left. $q$ is the chance that any one candidate is accepted. $(1-q)^N$ is the chance that none of the $N$ is, in which case the robot executes the last, rejected one. The first fraction is the verifier's precision, the chance that an accepted plan is good. As $N$ grows, $P_N$ approaches that precision and never exceeds it.
+
+<Figure
+  id="18.3"
+  takeaway="More candidates help quickly and then stop helping: the ceiling is the verifier's precision, and every extra candidate costs time."
+  caption="Success against the number of candidate plans checked, for a policy and verifier you set. The dashed line is the ceiling no amount of sampling can pass."
+  source="this book's model, in rust/ch18-research-bets; best-of-N selection for world-action models after Zhao et al. 2026 (arXiv 2607.17454) and adaptive execution after Wang et al. 2026 (2605.06222)."
+  toy
+>
+  <BestOfN />
+</Figure>
+
+With a policy that succeeds half the time and a verifier that accepts 90 percent of good plans and 20 percent of bad ones, the ceiling is about 82 percent, reached within about eight candidates. Cutting the verifier's false acceptances from 20 to 5 percent raises the ceiling to about 95 percent. The lesson for research bets is that test-time compute is worth as much as the verifier is good, which is why verification is becoming a research problem of its own. FFDC, from May 2026, uses a learned verifier the other way round: to decide when an imagined plan has stopped matching reality, so the robot replans only when needed. It reports up to 74 percent fewer planning calls on a real humanoid, with higher success <Cite k="when-to-trust-imagination" />.
+
+## Latency, data, evaluation, safety, embodiment
+
+**Latency** has the most mature answers. Asynchronous execution and real-time chunking, few-step denoising and parallel decoding are established <Cite k="real-time-chunking,openvla-oft" />. Right-sized, quantised edge deployment is promising <Cite k="vla-xpu-deployment,gr00t-n17-isaac-gr00t-repo" />, and adaptive replanning is early <Cite k="when-to-trust-imagination" />.
+
+**Data.** Egocentric human video at scale is promising and heavily funded <Cite k="egoscale,dreamdojo,dyna-2,gen1" />. Synthetic rewriting is promising, with its exchange rate against real data unsettled <Cite k="dreamgen,cosmos-transfer1" />. Learning from failures through labelled prompts is early <Cite k="pi07" />.
+
+**Evaluation.** Distributed double-blind real-robot comparison and blind A/B trials with statistical confidence are promising <Cite k="roboarena,tri-lbm" />. Perturbation and safety-aware benchmarks are early <Cite k="libero-plus,better-embodied-reasoning,vla-open-world-eval" />. Readiness frameworks are early too, with one detailed instance so far <Cite k="industrial-rfm-survey-2026" />.
+
+**Safety.** The only established answer is architectural: a certified envelope around the learned policy (chapter 15). Reasoning models as runtime monitors, judging whether a step succeeded or a plan is unsafe, are early <Cite k="gemini-robotics-er16" />. Physical fallbacks for balancing robots are an open question <Cite k="brooks-predictions-2026" />.
+
+**Embodiment.** Latent tokens to a learned whole-body controller is promising, shipped in GR00T N1.7 <Cite k="gr00t-n17-isaac-gr00t-repo,sonic" />. Cross-embodiment pretraining is promising <Cite k="open-x-embodiment,octo" />. Embodiment-agnostic action spaces, such as PointWorld's 3D point flows, are early <Cite k="pointworld" />.
+
+<Callout kind="caveat">
+Maturity is easy to overstate from papers. A technique that works in three papers from the same lab, or in simulation only, is early however good the results look. Several solutions rated promising here rest on one organisation's reports; the evidence-quality warnings of chapters 5 to 16 apply to them in full.
+</Callout>
+
+## In code
+
+The crate's verifier has two numbers, and the procedure is a short loop.
+
+<RustSnippet file="ch18-research-bets/src/lib.rs" region="verifier" caption="A verifier, a setup and one run of best-of-N with early stopping" />
+
+## Exercises
+
+The stubs are in `rust/ch18-research-bets/src/exercises.rs`.
+
+<Exercise n="18.1" title="What best-of-N buys" crate="ch18-research-bets" test="ex18_1"
+  hints={["Split on whether any candidate is accepted: if one is, it is good with the verifier's precision.", "If none is, the executed plan was rejected, which changes its chance of being good."]}>
+  Implement `success`. The test compares it with 200,000 simulated runs. Then explain in one sentence why the answer with one candidate must equal the policy's own success rate.
+</Exercise>
+
+<Exercise n="18.2" title="The ceiling" crate="ch18-research-bets" test="ex18_2"
+  hints={["The ceiling is the limit as N grows: the verifier's precision.", "Search N upwards until the target is reached, and give up at 1,000."]}>
+  Implement `ceiling` and `n_for`. Then find which matters more for the ceiling, raising acceptance of good plans from 0.9 to 0.99 or lowering acceptance of bad ones from 0.2 to 0.1, and say what that implies for building verifiers.
+</Exercise>
+
+<Exercise n="18.3" title="What it costs" crate="ch18-research-bets" test="ex18_3"
+  hints={["The expected number of candidates checked is a geometric sum that stops at N.", "Multiply by the cost of generating and checking one candidate."]}>
+  Implement `expected_latency_ms`. Then combine it with chapter 15's latency budget: how many candidates can a robot afford if it must decide within 300 ms?
+</Exercise>
+
+<NotSure>
+
+**Which bets will pay off.** The assessments are a snapshot. Several "early" entries are a single paper from mid-2026; some will become standard within a year and others will disappear.
+
+**Whether the families converge.** Figure 18.2 shows solutions pulling world-action models towards VLAs, latent models and geometry. Convergence on one hybrid design is one reading; another is that each family absorbs the others' best ideas and stays distinct. Chapter 19 treats these as scenarios.
+
+**Where the hard problems get their solutions.** Evaluation and safety have the fewest and least mature candidates. They may be solved by research, by regulation, or by industry practice that never appears in a paper.
+
+</NotSure>
+
+## Further reading
+
+- The WAM survey's section on open challenges and future directions <Cite k="lu2026-wam-survey" />.
+- The world-model-to-WAM tutorial, for a compact map of the approaches <Cite k="wm-to-wam-tutorial-2026" />.
+- Test-time scaling for WAMs, for verification by geometric consistency <Cite k="wam-test-time-scaling" />.
+- When to Trust Imagination, for verifying a plan against reality as it executes <Cite k="when-to-trust-imagination" />.
+- Privileged Foresight Distillation, for keeping the benefit of futures without generating them <Cite k="privileged-foresight-distillation" />.
+- LeJEPA, for the representation-learning bet <Cite k="lejepa" />.

@@ -1,0 +1,162 @@
+import { DomainMatrix } from "@/content/ch16/figures";
+import { HumanoidStack } from "@/components/viz/HumanoidStack";
+import { LookAhead } from "@/components/viz/LookAhead";
+import { DrivingRoles } from "@/components/viz/DrivingRoles";
+import { PickingCell } from "@/components/viz/PickingCell";
+
+{/* Chapter 16. Brief: Book.md section 4, chapter 16. Last checked 9 October 2026. L0: no equations. */}
+
+<Figure
+  id="16.1"
+  takeaway="Each domain leans on different families: VLAs dominate manipulation and industry, world models dominate driving, and reasoning models lead in service robots."
+  caption="Six application domains against the seven families. Filled cells are a main approach in this book's sources, outlined cells are used or researched, dashes are absent from the sources. Select a cell for the systems behind it."
+  source="the authors' reading of the sources cited in this chapter and in chapters 5 to 11; deployment counts are industry-survey or vendor claims."
+>
+  <DomainMatrix />
+</Figure>
+
+## Why this chapter exists
+
+Part II described the families as ideas. This chapter describes where they are used. Each domain imposes its own constraints: a humanoid must not fall, a car must handle the rare event, a warehouse cell must pick for eight hours without a supervisor, a service robot must understand a person. Those constraints decide which family dominates, and each domain has a failure mode of its own that a general benchmark does not show.
+
+One section per domain follows, each with the family that dominates, a named system, the failure mode to expect and, where it adds something, a figure. Deployment counts and adopter lists in this chapter come from vendors and industry surveys, and are named as claims.
+
+After this chapter you will be able to:
+
+- say which families dominate in each of six domains, and why the domain's constraints favour them;
+- name a representative system per domain and the first failure mode to plan for;
+- explain with figure 16.3 why look-ahead planning is only as good as the world model doing the looking.
+
+<Quote
+  who="Bernt Børnich"
+  role="chief executive officer of 1X Technologies"
+  source="NVIDIA Announces Isaac GR00T N1, NVIDIA Newsroom"
+  href="https://nvidianews.nvidia.com/news/nvidia-isaac-gr00t-n1-open-humanoid-robot-foundation-model-simulation-frameworks"
+  date="18 March 2025"
+>
+  The future of humanoids is about adaptability and learning.
+</Quote>
+
+## Tabletop and bimanual manipulation
+
+This is the home turf of reactive VLAs (chapter 5) and the large behavior models they grew from (chapter 11). The π0 line, GR00T, OpenVLA and their open relatives are developed and benchmarked here, and Diffusion Policy and ACT remain the workhorses of bimanual teleoperation research <Cite k="pi07,gr00t-n17-isaac-gr00t-repo,diffusion-policy,act-aloha" />. The frontier claims are about learning quickly: Generalist AI reports GEN-1.5 learning a task from a single 3 to 12 second demonstration, at 59 percent average success across 10 tasks<Claim /> <Cite k="gen15" />.
+
+**The failure mode to expect** is distribution shift that looks small to a person. LIBERO-Plus showed success falling from 95 percent to below 30 percent under modest changes of camera viewpoint and initial robot state <Cite k="libero-plus" />. Figures 5.1 and 11.3 cover the mechanics of this domain; this chapter does not repeat them.
+
+## Humanoids and whole-body control
+
+Humanoids stack three layers: something that reasons about the task, something that turns it into motion, and something that keeps a two-legged body balanced while it moves. Figure 16.2 shows three ways the layers are arranged today.
+
+<Figure
+  id="16.2"
+  takeaway="Every humanoid stack separates deciding what to do from keeping the body upright; the systems differ in where the line falls and what crosses it."
+  caption="Three humanoid control stacks: GR00T N1.7 with its SONIC whole-body controller, Figure's Helix, and a reasoning model orchestrating a humanoid's own controllers. Select one."
+  source="NVIDIA Isaac-GR00T repository (GR00T N1.7); SONIC (arXiv 2511.07820); Figure AI's Helix post (2025); Gemini Robotics ER 2 announcement (Google, 30 July 2026)."
+  schematic
+>
+  <HumanoidStack />
+</Figure>
+
+GR00T N1.7 drives a Unitree G1 through SONIC: the VLA emits compact latent action tokens and a learned whole-body controller turns them into joint commands for legs, arms and hands <Cite k="gr00t-n17-isaac-gr00t-repo,sonic" />. Helix splits a 7-billion-parameter reasoner at 7 to 9 Hz from an 80-million-parameter controller at 200 Hz <Cite k="figure-helix" />. Gemini Robotics ER 2 orchestrates a humanoid's own controllers as tools <Cite k="gemini-robotics-er2" />. NVIDIA previewed GR00T N2 at GTC in March 2026 and named AGIBOT, Humanoid, LG Electronics, NEURA Robotics and Noble Machines as adopting GR00T models for industrial humanoids<Claim /> <Cite k="gr00t-n2-preview" />. For research, NVIDIA's Isaac GR00T reference humanoid combines a Unitree H2 Plus with Sharpa five-fingered hands and Jetson Thor compute, with Ai2, ETH Zurich, Stanford and UC San Diego among the first users <Cite k="nvidia-pr-reference-humanoid" />.
+
+**The failure mode to expect** is physical, and it collides with how industrial safety works. Every industrial robot has a safety stop that cuts power to the motors, but cutting power to a balancing robot can make it fall. Rodney Brooks recalls that at Rethink Robotics his team kept the arms of Baxter and Sawyer from dropping on power cut-off with a circuit that braked the motors without active power, and adds: "Perhaps there are similar possible solutions for humanoid robots and falling, but they need to be invented yet" <Cite k="brooks-predictions-2026" />.
+
+## Mobile manipulation and navigation
+
+Navigation was one of the first places world models earned their keep, because a robot that can imagine where a path leads can compare paths before taking one. Navigation World Models, a 1-billion-parameter video diffusion model trained on egocentric video from humans and robots, plans by simulating candidate trajectories and evaluating whether they reach the goal, either from scratch or by ranking trajectories proposed by another policy <Cite k="nwm" />. X-Mobility learns a latent world model separately from its action policy, so it can train on data with or without expert actions <Cite k="x-mobility" />. InternVLA-N1, published as DualVLN, puts a VLM that predicts mid-term waypoints over a fast diffusion policy, the fast-slow split of chapter 5 applied to navigation <Cite k="internvla-n1" />. For mobile manipulation, DreamTrajectory predicts an end-effector trajectory together with the whole-body action chunk, and checks the motion it intended against the motion it achieved <Cite k="dreamtrajectory" />.
+
+<Figure
+  id="16.3"
+  takeaway="Look-ahead planning picks the path whose imagined outcome is best; when the world model is wrong about how the robot moves, the best-looking path can be the one that crashes."
+  caption="A robot, two pillars and a goal. A navigation world model imagines thirteen candidate arcs and the robot drives the one it imagines ending nearest the goal. Make the model's sense of turning wrong, and compare the imagined path with the driven one."
+  source="this book's toy, in rust/ch16-applications; look-ahead by ranking imagined trajectories follows Navigation World Models (arXiv 2412.03572)."
+  toy
+>
+  <LookAhead />
+</Figure>
+
+**The failure mode to expect** is the one in figure 16.3. With an accurate model the robot threads past the first pillar to the goal. If the model believes the robot turns 25 percent more sharply than it does, the chosen path is really straighter than imagined and clips the first pillar. If it believes the robot turns 40 percent less sharply, the path turns too far and hits the second. This is chapter 8's model bias in a form a reader can drive.
+
+## Autonomous driving
+
+Driving is where world models are most established, and they are used mainly to generate data and scenarios rather than to drive. A car must handle events too rare to collect, and a world model that can produce them on demand is worth more than one more policy. Figure 16.4 shows three roles.
+
+<Figure
+  id="16.4"
+  takeaway="Driving uses world models mostly to produce the scenarios a car must be tested against: generated video, forecast occupancy, and futures learned from real driving."
+  caption="Three roles of world models around one intersection: generating scenarios, forecasting occupancy, and predicting future camera frames together with a path. Select a role."
+  source="GAIA-1 (arXiv 2309.17080); GAIA-2 (2503.20523); OccWorld (2311.16038); DriveDreamer (2309.09777)."
+  schematic
+>
+  <DrivingRoles />
+</Figure>
+
+GAIA-1 cast driving world modelling as next-token prediction over video, text and action <Cite k="gaia-1" />. GAIA-2, a latent diffusion model, generates consistent multi-camera video conditioned on ego dynamics, other agents, environment and road semantics, across the UK, the US and Germany, so that "both common and rare driving scenarios" can be simulated <Cite k="gaia-2" />. OccWorld forecasts 3D occupancy and the ego path with a GPT-like transformer, a geometry-first model in chapter 9's sense <Cite k="occworld" />. DriveDreamer builds its world model entirely from real-world driving <Cite k="drivedreamer" />. Public evaluation runs on datasets and benchmarks such as nuScenes and NAVSIM <Cite k="nuscenes,navsim" />.
+
+**The failure mode to expect** is the one rare scenarios are meant to fix: a generated scenario looks plausible but does not behave like the real world, so a system validated on it is less safe than it appears. Chapter 8's gap between plausible and feasible applies with higher stakes.
+
+## Industrial and logistics
+
+Warehouse picking was among the first commercial uses of robot foundation models. Covariant's RFM-1, an 8-billion-parameter any-to-any model trained on data from a fleet of warehouse robots, was announced in March 2024. Its makers described a data collection system that had gathered "tens of millions of trajectories" from robots deployed to dozens of customers<Claim /> <Cite k="covariant-rfm1" />. By the first quarter of 2026, one industry survey counts at least eleven commercial deployments with VLAs as the primary policy<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />. Inspection is a second industrial use: Gemini Robotics-ER 1.6's instrument reading was developed with Boston Dynamics for facility inspection with Spot<Claim /> <Cite k="gemini-robotics-er16" />.
+
+<Figure
+  id="16.5"
+  takeaway="In a real cell the industrial readiness implications are not abstract: each one bites at a specific place, and each suggests a specific test."
+  caption="A picking cell with seven of the survey's eleven implications marked where they apply. Select a marker for what to check."
+  source="implications from the industrial readiness survey (Kube et al. 2026, arXiv 2603.06749); the cell and the checks are the authors' illustration."
+  schematic
+>
+  <PickingCell />
+</Figure>
+
+**The failure mode to expect** is integration, not intelligence. Chapter 15's readiness survey found even the highest-rated models fulfilling none of its criteria on precision, real-time performance or cost-effective integration <Cite k="industrial-rfm-survey-2026" />. A cell fails in production because it cannot meet the conveyor's cycle time or talk to the warehouse system, more often than because the model cannot recognise a product.
+
+## Mobile service robots
+
+Service robots in homes, hospitals and shops are where language matters most, and where embodied reasoning models (chapter 10) lead. A systematic review published in Robotics in 2026 names the domain's core challenges: translating natural-language instructions into executable actions, perceiving reliably in human-centred environments, estimating uncertainty for safe decisions, and fitting computation on board <Cite k="mdpi2026-mobile-service-robots-review" />. Benchmarks for instruction-following navigation, such as R2R and VLN-CE, come from this line of work <Cite k="r2r,vln-ce" />.
+
+**The failure mode to expect** is misunderstanding. A service robot that executes the wrong interpretation of a request confidently is worse than one that asks. Chapter 10's success detection and chapter 14's memory are the tools; uncertainty estimation, which the review lists as a core challenge, is the missing one.
+
+## In code
+
+The crate's navigation world is two pillars, a goal and arcs of constant curvature.
+
+<RustSnippet file="ch16-applications/src/lib.rs" region="world" caption="The room, the candidate arcs and the step size behind figure 16.3" />
+
+## Exercises
+
+The stubs are in `rust/ch16-applications/src/exercises.rs`. This chapter is equation-free; the exercises build the look-ahead planner of figure 16.3 one piece at a time.
+
+<Exercise n="16.1" title="Roll a path out" crate="ch16-applications" test="ex16_1"
+  hints={["Turn first, then move: heading += curvature × step, then x += step × cos(heading).", "Include the starting position in the result."]}>
+  Implement `arc`. Then explain why a real mobile base would also need a limit on how fast its heading can change.
+</Exercise>
+
+<Exercise n="16.2" title="Does the path hit anything?" crate="ch16-applications" test="ex16_2"
+  hints={["A point collides if its distance to an obstacle's centre is less than the obstacle's radius plus the robot's."]}>
+  Implement `collides`. What does checking only the sampled points miss, and how would you fix it?
+</Exercise>
+
+<Exercise n="16.3" title="Choose by imagining" crate="ch16-applications" test="ex16_3"
+  hints={["Imagine each candidate with its curvature multiplied by the model's turning error.", "Skip candidates whose imagined path collides; keep the one whose imagined end is nearest the goal."]}>
+  Implement `choose`. Then find the range of turning errors for which the robot still reaches the goal safely, and suggest one check a planner could run before trusting its world model.
+</Exercise>
+
+<NotSure>
+
+**How much is deployed.** Deployment counts and adopter lists in this chapter are vendor statements or come from industry surveys. Independent counts of robot foundation models in production do not exist in this book's sources.
+
+**Whether driving's lessons transfer.** Driving built world models for scenario generation years before manipulation did. Whether manipulation will follow the same path, generating rare events for validation, or a different one is not yet clear.
+
+**Which domains come next.** The matrix in figure 16.1 has many dashes. Some mark real gaps, such as geometry-first models in service robots; others only mark what this book's sources did not cover.
+
+</NotSure>
+
+## Further reading
+
+- The NVIDIA reference humanoid announcement, for the hardware research teams now share <Cite k="nvidia-pr-reference-humanoid" />.
+- Navigation World Models, for look-ahead planning with a video model <Cite k="nwm" />.
+- GAIA-2, for controllable scenario generation in driving <Cite k="gaia-2" />.
+- OccWorld, for occupancy forecasting <Cite k="occworld" />.
+- The systematic review of foundation models for mobile service robots <Cite k="mdpi2026-mobile-service-robots-review" />.
+- The WAM survey's section on applications <Cite k="lu2026-wam-survey" />.

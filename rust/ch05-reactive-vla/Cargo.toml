@@ -1,0 +1,12 @@
+[package]
+name = "ch05-reactive-vla"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chapter 5 companion code: action heads, FAST-style compression and the fast-slow split"
+
+[features]
+# Compile the reference solutions in place of the exercise stubs.
+solutions = []
+
+[dependencies]

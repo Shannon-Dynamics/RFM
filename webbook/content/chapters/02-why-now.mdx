@@ -1,0 +1,165 @@
+import { IngredientTimeline, DataPyramid, TeleopCost, DemonstrationFlip } from "@/content/ch02/figures";
+import { ControlRate } from "@/components/viz/ControlRate";
+
+{/* Chapter 2. Brief: Book.md section 4, chapter 2. Last checked 3 October 2026. L0: no equations. */}
+
+<Figure
+  id="2.1"
+  takeaway="No single breakthrough: six separate ingredients matured within the same few years, and robot foundation models are what happened when they met."
+  caption="Six tracks on one time axis, 2021 to 2026. Select a milestone for what it contributed."
+  source="dates are first arXiv versions or announcements, from each source in reference/; economics from SVRC, State of Robotics 2026 (industry survey)."
+>
+  <IngredientTimeline />
+</Figure>
+
+## Why this chapter exists
+
+Every idea in this book is older than the models that made it famous. Learning robot policies from demonstrations, predicting video, discretising actions into tokens, using a world model to plan: each has a paper from the 2010s or earlier. So why did robot foundation models arrive in 2024 to 2026 and not five years before?
+
+The honest answer is that no one thing changed. Six ingredients matured within roughly the same 24 months: vision-language models good enough to be a backbone, video models good enough to be a dynamics prior, robot datasets large enough to pool, human video usable as robot data, inference fast enough for a robot, and economics that made fine-tuning cheaper than starting over. Each was necessary, none was sufficient. This chapter tells the story of their convergence, because that story predicts what the next convergence will need.
+
+After this chapter you will be able to:
+
+- name the six ingredients and say which family of model depends most on each;
+- explain, with the simulator in figure 2.3, how action chunking turns a slow model into a fast controller;
+- tell which of the commonly quoted numbers about this shift are measured, and which come from vendors or industry surveys.
+
+<Quote
+  who="Deepak Pathak"
+  role="cofounder and CEO of Skild AI"
+  source="NVIDIA Announces NVIDIA Isaac GR00T Reference Humanoid Robot for Academic Research, NVIDIA Newsroom"
+  href="https://nvidianews.nvidia.com/news/nvidia-open-humanoid-robot-reference-design"
+  date="31 May 2026"
+>
+  To make progress toward general-purpose robots, researchers need platforms that are both capable and broadly accessible.
+</Quote>
+
+## 1. Vision-language models became good enough to be a backbone
+
+The first generalist robot policies borrowed their understanding of the world from vision-language models (VLMs). The recipe, which chapter 5 explains in full, is to take a pretrained VLM and teach it to emit actions. It only works if the VLM already knows what a mug is, where the handle sits and what "put it in the sink" means.
+
+By 2024 open VLMs crossed that bar. PaliGemma, a 3-billion-parameter model built for transfer, became the backbone of π0 and π0.5 <Cite k="paligemma,pi05" />. Qwen-VL and its successors became backbones for others <Cite k="qwen-vl" />. In 2026 π0.7 moved to Gemma 3 <Cite k="gemma3,pi07" />, and NVIDIA's GR00T N1.7 to Cosmos-Reason2, a VLM trained for physical reasoning and released in December 2025 <Cite k="gr00t-n17-isaac-gr00t-repo" />. A backbone is now a choice, not a research project.
+
+## 2. Video models became good enough to be a dynamics prior
+
+A video generator that has watched enough of the world has learned, implicitly, how things move: what happens when a cup is tipped, how cloth falls. Chapter 6 showed what that buys a robot policy. The ingredient arrived in early 2025, when large open video models appeared. NVIDIA's Cosmos world foundation models were trained on about 100 million clips drawn from roughly 20 million hours of raw video <Cite k="cosmos-wfm" />. Wan's 14-billion-parameter model was trained on billions of images and videos <Cite k="wan" />. A Google DeepMind study then showed a frontier video model solving visual tasks it had never been trained for <Cite k="veo" />.
+
+The important word is open. When the video backbone had to be pretrained from scratch, the approach was out of reach for most robotics labs; once open models existed, a lab could fine-tune one <Cite k="nvidia-blog-rise-of-wams" />.
+
+## 3. Robot datasets crossed the million-trajectory mark
+
+Robots produce data slowly. A trajectory is one demonstration of one task: minutes of an operator's time, recorded on one robot in one room. For years every lab trained on its own few thousand.
+
+Pooling changed the scale. Open X-Embodiment gathered over one million real robot trajectories from 22 robot types, contributed by 21 institutions, in standard formats <Cite k="open-x-embodiment" />. DROID collected 76,000 trajectories (350 hours) across 564 scenes in the wild <Cite k="droid" />, and BridgeData V2 60,096 trajectories on a low-cost robot <Cite k="bridgedata-v2" />. A million trajectories is still tiny next to the web, which is why the next ingredient mattered.
+
+<Figure
+  id="2.2"
+  takeaway="Most of what separates the families is which layer of this pyramid they can learn from."
+  caption="Three layers of data, smallest and most expensive on top. Select a layer for its datasets, their reported sizes and the families that can use it."
+  source="sizes from each dataset's paper; EgoScale and Dyna-2 sizes are vendor claims."
+>
+  <DataPyramid />
+</Figure>
+
+## 4. Human video became usable as robot data
+
+There is far more video of people doing things with their hands than of robots doing anything. The problem is that human video carries no robot actions. Two developments made it usable. Better capture added the missing signal: EgoDex recorded 829 hours of egocentric video with tracked 3D hand and finger poses <Cite k="egodex" />, and the UMI hand-held gripper turned human demonstrations into robot-ready trajectories <Cite k="umi" />. Better learning made the rest of it usable: latent actions, chapter 7's subject, infer an action-like signal from consecutive frames.
+
+The scale then moved quickly. EgoScale trained on 20,854 hours of action-labelled egocentric video and reports a log-linear scaling law between hours of human data and prediction loss <Cite k="egoscale" />. DreamDojo pretrained a world model on 44,000 hours <Cite k="dreamdojo" />. In August 2026 Dyna Robotics reported pretraining on more than one million hours<Claim /> <Cite k="dyna-2" />. The direction is clear. Whether the scaling holds across labs and robots is not yet established, and chapter 13 looks at the evidence.
+
+## 5. Inference became fast enough for a robot
+
+A robot arm runs its controller tens to hundreds of times a second. A large model takes a tenth of a second or more to think. Two ideas closed the gap.
+
+The first is the **action chunk**: predict the next several actions at once, then execute them while the model is idle. ACT introduced the idea for robot imitation in 2023 <Cite k="act-aloha" />. One inference now pays for many motor commands. The second is **thinking while moving**: compute the next chunk while the current one executes, so the robot never stops. Real-time chunking made this work for flow-based VLAs without retraining <Cite k="real-time-chunking" />.
+
+The simulator below shows why both matter. Set a 200-millisecond model and a 50 Hz controller. With one action per inference the robot delivers under 5 commands a second and spends most of its time waiting. Raise the chunk length and the waiting is amortised; switch to thinking while moving and the robot runs at its controller's full rate as soon as a chunk lasts longer than an inference.
+
+<Figure
+  id="2.3"
+  takeaway="Chunking amortises inference and asynchronous execution hides it: together they turn a slow model into a fast controller."
+  caption="Two seconds of a robot's life. Grey: the model thinking. Blue: the robot moving. Change the latency, chunk length and controller rate."
+  source="rust/ch02-why-now (sync_rate_hz, async_keeps_up)."
+  schematic
+>
+  <ControlRate />
+</Figure>
+
+Hardware and engineering did the rest. Quantised models, exported to inference engines and run on robot-mounted computers such as NVIDIA's Jetson Thor <Cite k="nvidia-pr-reference-humanoid" />, now reach control-relevant rates on the robot itself. GR00T N1.7 ships with ONNX and TensorRT export <Cite k="nvidia-blog-gr00t-end-to-end" />. An industry survey puts quantised VLAs at 10 to 25 Hz on consumer-grade GPUs<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />, and a 2026 study across edge accelerators finds that right-sized devices can meet control-rate constraints at lower cost and energy than flagship GPUs <Cite k="vla-xpu-deployment" />.
+
+<RustSnippet file="ch02-why-now/src/lib.rs" region="control_rate" caption="The arithmetic behind figure 2.3" />
+
+## 6. The economics flipped
+
+The last ingredient is money. For most of the 2010s a new robot task meant collecting thousands of demonstrations and training a policy from scratch. Two numbers from the State of Robotics 2026 report describe the change, and both should be read as industry-survey claims rather than measurements.
+
+The first is the price of data. One hour of teleoperation data, captured, labelled and packaged, fell from about $340 in early 2024 to $136 by the end of 2025 and $118 by March 2026<Claim kind="survey" /> <Cite k="svrc-state-of-robotics-2026" />.
+
+<Figure
+  id="2.4"
+  takeaway="Robot data got cheaper by roughly two thirds in two years."
+  caption="Reported cost of one hour of teleoperation data, captured, labelled and packaged in a standard format."
+  source="SVRC, State of Robotics 2026 (March 2026). Industry survey."
+>
+  <TeleopCost />
+</Figure>
+
+The second is how much data a new task needs. The same report finds that fine-tuning a pretrained VLA on 200 to 500 demonstrations now outperforms a task-specific policy trained from scratch on more than 1,000<Claim kind="survey" />. Model makers report smaller numbers still, for their own models: LingBot-VLA used 130 post-training episodes per task in its evaluation <Cite k="lingbot-vla" />, and MotuBrain adapts to a new humanoid from 50 to 100 trajectories<Claim /> <Cite k="motubrain" />.
+
+<Figure
+  id="2.5"
+  takeaway="A pretrained base turned a thousand-demonstration project into a few-hundred-demonstration one."
+  caption="Demonstrations reported as needed for a new task, as each source states it. Ranges are as given; the sources measure different tasks and robots, so compare orders of magnitude only."
+  source="SVRC, State of Robotics 2026 (industry survey); Wu et al. 2026, arXiv 2601.18692; Motubrain Team 2026, arXiv 2604.27792 (vendor claims)."
+>
+  <DemonstrationFlip />
+</Figure>
+
+When fine-tuning a shared base beats building from scratch, the economically rational move is to build the base. That is the moment foundation models stop being a research bet and become a product strategy, which is how chapter 3's fourth phase begins.
+
+## What converged, and what it predicts
+
+Laid side by side, the six tracks in figure 2.1 explain the timing better than any single milestone. The robot datasets of 2023 had nothing strong enough to learn from them until the VLM backbones of 2024. The video models of 2025 had no way to drive a robot until action chunking and fast inference made the output usable. Human video was a curiosity until the latent-action and hand-tracking work of 2025 and 2026 gave it a robot-shaped signal.
+
+The pattern suggests what to watch. The next shift will need its own convergence: probably cheap, broad real-robot evaluation (chapter 15), safety cases for learned controllers (chapter 17), and memory for tasks longer than a few minutes (chapter 14). Each is still a single track.
+
+The chapter's Rust crate also fits the one scaling curve in this chapter with a stated number. EgoScale reports average task completion rising from 0.30 after 1,000 hours of human pretraining to 0.71 after 20,000 <Cite k="egoscale" />. A log-linear curve through those two points is easy to draw, and exercise 2.3 shows how quickly it starts promising more than 100 percent task completion if you follow it beyond the data.
+
+<RustSnippet file="ch02-why-now/src/lib.rs" region="scaling" caption="A log-linear scaling curve and the two points EgoScale reports" />
+
+## Exercises
+
+The stubs are in `rust/ch02-why-now/src/exercises.rs`.
+
+<Exercise n="2.1" title="How long must a chunk be?" crate="ch02-why-now" test="ex2_1"
+  hints={["Try chunk lengths in order and stop at the first that reaches the target rate.", "No chunk length can deliver more commands per second than the controller itself runs."]}>
+  Implement `min_chunk_for_rate`: the shortest chunk that, executed synchronously, delivers at least a target rate. Then use figure 2.3 to check your answer for a 200 ms model, a 50 Hz controller and a 25 Hz target.
+</Exercise>
+
+<Exercise n="2.2" title="Fit the curve" crate="ch02-why-now" test="ex2_2"
+  hints={["Fit a straight line to (ln x, y) by ordinary least squares."]}>
+  Implement `fit_log_linear`, a least-squares fit of a straight line against the logarithm of the hours. With EgoScale's two points it must pass through both exactly; with four noisy points it must recover the slope.
+</Exercise>
+
+<Exercise n="2.3" title="Know when to stop believing it" crate="ch02-why-now" test="ex2_3"
+  hints={["Check the range of the fitted x values first, then the range of the prediction."]}>
+  Implement `guarded_predict`, which refuses to extrapolate beyond the data or to return a prediction outside its valid range. Then compute what the unguarded curve predicts at 400,000 hours, and write one sentence on why a vendor's scaling plot should always state the range it was measured over.
+</Exercise>
+
+<NotSure>
+
+**Whether the scaling is real across labs.** The clearest scaling evidence for human video comes from model makers measuring their own models on their own robots: EgoScale's log-linear curve, Dyna-2's million hours. Independent replication is not yet published as far as this book's sources show.
+
+**What the economic numbers measure.** The data-cost and demonstrations figures come from one industry survey. It does not publish the underlying deployments, and "fine-tuning beats training from scratch" depends heavily on how close the new task is to the pretraining data.
+
+**Whether the order matters.** This chapter tells the six tracks as converging; it is equally possible that one of them, cheap robot data or open video models, did most of the work and the others were already ready. The timeline cannot separate those readings.
+
+</NotSure>
+
+## Further reading
+
+- Open X-Embodiment, the dataset that made pooling robot data normal <Cite k="open-x-embodiment" />.
+- EgoScale, for the strongest public case for human video at scale <Cite k="egoscale" />.
+- Real-time chunking, for how asynchronous execution works with flow-based policies <Cite k="real-time-chunking" />.
+- The NVIDIA post on world-action models, for why open video backbones changed what a lab can afford <Cite k="nvidia-blog-rise-of-wams" />.
+- The State of Robotics 2026 report, read as an industry survey <Cite k="svrc-state-of-robotics-2026" />.

@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "ch01-interface",
+    "ch02-why-now",
+    "ch03-lineage",
+    "ch04-toolkit",
+    "ch05-reactive-vla",
+    "ch06-world-action",
+    "ch07-latent",
+    "ch08-simulators",
+    "ch09-geometry",
+    "ch10-reasoning",
+    "ch11-behavior",
+    "ch12-choosing",
+    "ch13-data",
+    "ch14-post-training",
+    "ch15-deployment",
+    "ch16-applications",
+    "ch17-open-problems",
+    "ch18-research-bets",
+    "ch19-scenarios",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"

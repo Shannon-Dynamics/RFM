@@ -1,0 +1,22 @@
+.wrap { display: grid; gap: 1rem; font-family: var(--font-ui); }
+.scroll { overflow-x: auto; }
+.table { border-collapse: collapse; width: 100%; min-width: 34rem; table-layout: fixed; font-size: 0.82rem; }
+.critCol { width: 9.5rem; }
+.table th, .table td { border-bottom: 1px solid var(--rule); padding: 0.3rem 0.2rem; text-align: center; }
+.table thead th { vertical-align: bottom; padding-bottom: 0.5rem; font-weight: 600; font-size: 0.74rem; line-height: 1.2; color: var(--ink); }
+.table thead th.corner { text-align: left; font-family: var(--font-mono); font-size: 10px; font-weight: 400; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.table tbody th, .table tfoot th { text-align: left; font-weight: 500; color: var(--ink-2); line-height: 1.25; padding-left: 0; }
+.fam { display: block; width: 0.55rem; height: 0.55rem; margin: 0 auto 0.35rem; border-radius: 50%; background: var(--fam); }
+.famName { display: block; hyphens: auto; }
+.famCh { display: block; margin-top: 0.2rem; font-family: var(--font-mono); font-size: 9.5px; font-weight: 400; letter-spacing: 0.08em; color: var(--ink-3); }
+.cell { font: inherit; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 0.25rem 0.3rem; cursor: pointer; display: inline-flex; gap: 2px; }
+.cell:hover { border-color: var(--rule-strong); }
+.cell[aria-pressed="true"] { border-color: var(--ink); background: var(--surface-2); }
+.pip { width: 0.5rem; height: 0.5rem; border-radius: 50%; border: 1.5px solid var(--ink-2); }
+.pip[data-on="true"] { background: var(--ink-2); }
+.table tfoot th, .table tfoot td { border-bottom: 0; border-top: 1px solid var(--rule-strong); padding-top: 0.55rem; }
+.score { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink-2); }
+.score[data-best="true"] { color: var(--ink); }
+.bar { display: block; height: 4px; margin: 0.3rem 0.35rem 0; border-radius: 2px; background: var(--surface-2); }
+.bar span { display: block; height: 100%; border-radius: 2px; background: var(--fam); }
+.weights { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.6rem 1.2rem; }

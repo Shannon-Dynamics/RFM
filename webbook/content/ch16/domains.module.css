@@ -1,0 +1,12 @@
+.scroll { overflow-x: auto; }
+.table { border-collapse: collapse; width: 100%; min-width: 34rem; font-family: var(--font-ui); font-size: 0.84rem; }
+.table th, .table td { border-bottom: 1px solid var(--rule); padding: 0.4rem 0.25rem; text-align: center; }
+.table thead th { font-size: 0.74rem; font-weight: 600; color: var(--ink-2); vertical-align: bottom; line-height: 1.2; hyphens: auto; }
+.table tbody th { text-align: left; white-space: nowrap; font-weight: 600; color: var(--ink); padding-left: 0; }
+.dot { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--fam); margin-right: 0.45rem; }
+.cell { width: 2rem; height: 1.35rem; border-radius: 4px; cursor: pointer; border: 2px solid var(--fam); background: transparent; }
+.cell[data-level="2"] { background: var(--fam); }
+.cell[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+.key { display: inline-block; width: 1.4rem; height: 0.9rem; border-radius: 3px; border: 2px solid var(--ink-2); }
+.key[data-level="2"] { background: var(--ink-2); }
+.none { display: inline-block; width: 0.6rem; height: 2px; background: var(--rule-strong); vertical-align: middle; }

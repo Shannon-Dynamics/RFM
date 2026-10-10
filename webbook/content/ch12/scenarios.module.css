@@ -1,0 +1,8 @@
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; font-family: var(--font-ui); }
+.card { border: 1px solid var(--rule); border-radius: var(--radius-m); background: var(--surface); padding: 0.9rem 1rem; font-size: 0.95rem; line-height: 1.45; }
+.card h4 { margin: 0 0 0.25rem; font-size: 1.1rem; }
+.card p { margin: 0 0 0.55rem; color: var(--ink); }
+.meta { color: var(--ink-3) !important; font-size: 0.88rem; }
+.chosen { list-style: none; margin: 0 0 0.6rem; padding: 0.6rem 0.7rem; background: var(--surface-2); border-radius: var(--radius-s); display: grid; gap: 0.4rem; }
+.chosen li { display: flex; gap: 0.5rem; align-items: baseline; }
+.dot { flex: none; width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--fam); transform: translateY(0.05rem); }

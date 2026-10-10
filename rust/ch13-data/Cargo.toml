@@ -1,0 +1,12 @@
+[package]
+name = "ch13-data"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Chapter 13 companion code: data mixtures, repetition and what a scaling curve can and cannot say"
+
+[features]
+# Compile the reference solutions in place of the exercise stubs.
+solutions = []
+
+[dependencies]
