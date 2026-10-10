@@ -8,6 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://rfm.shannon.id"),
   title: { default: "Robot Foundation Models · Shannon Dynamics", template: "%s · Robot Foundation Models" },
   description: "An interactive field handbook to robot foundation models: seven families, how they work, and what remains unsolved.",
 };
